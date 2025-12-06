@@ -30,6 +30,7 @@ class UserProfile(models.Model):
     age = models.IntegerField(null=True, blank=True)
     bio = models.TextField(blank=True, null=True)
     email = models.EmailField(unique=True)
+    password = models.CharField(max_length=255, null=True, blank=True)  # Hashed password
     profilePhoto = models.URLField(blank=True, null=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)

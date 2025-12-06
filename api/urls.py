@@ -1,10 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     UserProfileViewSet, FollowRequestViewSet, FollowerViewSet,
     PostViewSet, StoryViewSet, ChatViewSet,
     UserPostsView, UserStoriesView, ChatMessagesView
 )
+from .auth_views import SignupView, LoginView
 
 # Create router for ViewSets
 router = DefaultRouter()
@@ -17,6 +19,11 @@ router.register(r'chats', ChatViewSet, basename='chat')
 
 # URL patterns
 urlpatterns = [
+    # Authentication endpoints
+    path('auth/signup/', SignupView.as_view(), name='auth-signup'),
+    path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('auth/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    
     # Router URLs
     path('', include(router.urls)),
     

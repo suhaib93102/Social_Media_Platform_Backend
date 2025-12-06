@@ -8,7 +8,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "https://social-media-platform-backend-4oz4.onrender.com"
 
 def print_response(title, response):
     """Helper to print formatted response"""
