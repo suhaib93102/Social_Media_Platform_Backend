@@ -1,0 +1,168 @@
+from django.db import models
+from django.conf import settings
+from django.utils import timezone
+import json
+
+# Conditional import for PostgreSQL ArrayField
+try:
+    from django.contrib.postgres.fields import ArrayField
+    HAS_POSTGRES = True
+except ImportError:
+    HAS_POSTGRES = False
+
+
+def get_array_field(*args, **kwargs):
+    """
+    Returns ArrayField for PostgreSQL or JSONField for other databases
+    """
+    if settings.DATABASES['default']['ENGINE'] == 'django.db.backends.postgresql':
+        return ArrayField(*args, **kwargs)
+    else:
+        # Use JSONField for SQLite/other databases
+        return models.JSONField(default=list, **{k: v for k, v in kwargs.items() if k not in ['base_field', 'size']})
+
+
+class UserProfile(models.Model):
+    """User profile model matching the users collection"""
+    userId = models.CharField(max_length=255, primary_key=True, unique=True)
+    name = models.CharField(max_length=255)
+    gender = models.CharField(max_length=50, blank=True, null=True)
+    age = models.IntegerField(null=True, blank=True)
+    bio = models.TextField(blank=True, null=True)
+    email = models.EmailField(unique=True)
+    profilePhoto = models.URLField(blank=True, null=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    updatedAt = models.DateTimeField(auto_now=True)
+    activePincodes = models.JSONField(default=list, blank=True)
+    followers = models.JSONField(default=list, blank=True)
+    following = models.JSONField(default=list, blank=True)
+    idCardUrl = models.URLField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'users'
+
+    def __str__(self):
+        return f"{self.name} ({self.userId})"
+
+
+class FollowRequest(models.Model):
+    """Follow request model"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    ]
+    
+    documentId = models.AutoField(primary_key=True)
+    createdAt = models.DateTimeField(auto_now_add=True)
+    fromUserId = models.CharField(max_length=255)
+    toUserId = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    class Meta:
+        db_table = 'followRequests'
+        unique_together = ['fromUserId', 'toUserId']
+
+    def __str__(self):
+        return f"{self.fromUserId} -> {self.toUserId} ({self.status})"
+
+
+class Follower(models.Model):
+    """Follower relationship model"""
+    documentId = models.AutoField(primary_key=True)
+    createdAt = models.DateTimeField(auto_now_add=True)
+    followerId = models.CharField(max_length=255)
+    followingId = models.CharField(max_length=255)
+
+    class Meta:
+        db_table = 'followers'
+        unique_together = ['followerId', 'followingId']
+
+    def __str__(self):
+        return f"{self.followerId} follows {self.followingId}"
+
+
+class Post(models.Model):
+    """Post model with location data"""
+    MEDIA_TYPE_CHOICES = [
+        ('image', 'Image'),
+        ('video', 'Video'),
+    ]
+    
+    postId = models.AutoField(primary_key=True)
+    description = models.TextField(blank=True, null=True)
+    mediaType = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES)
+    mediaURL = models.URLField()
+    pincode = models.CharField(max_length=10, blank=True, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    userId = models.CharField(max_length=255)
+    
+    # Location fields stored as JSON
+    location = models.JSONField(default=dict)  # Contains: accuracy, altitude, altitudeAccuracy, heading, latitude, longitude, speed
+
+    class Meta:
+        db_table = 'posts'
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"Post {self.postId} by {self.userId}"
+
+
+class Story(models.Model):
+    """Story model with expiration"""
+    MEDIA_TYPE_CHOICES = [
+        ('image', 'Image'),
+        ('video', 'Video'),
+    ]
+    
+    storyId = models.AutoField(primary_key=True)
+    createdAt = models.DateTimeField(auto_now_add=True)
+    description = models.TextField(blank=True, null=True)
+    expireAt = models.DateTimeField()
+    mediaType = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES)
+    mediaURL = models.URLField()
+    userId = models.CharField(max_length=255)
+
+    class Meta:
+        db_table = 'stories'
+        ordering = ['-createdAt']
+
+    def __str__(self):
+        return f"Story {self.storyId} by {self.userId}"
+    
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expireAt
+
+
+class Chat(models.Model):
+    """Chat model for conversations"""
+    chatId = models.AutoField(primary_key=True)
+    lastMessage = models.TextField(blank=True, null=True)
+    lastMessageTime = models.DateTimeField(null=True, blank=True)
+    users = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = 'chats'
+        ordering = ['-lastMessageTime']
+
+    def __str__(self):
+        return f"Chat {self.chatId} - {', '.join(self.users) if isinstance(self.users, list) else self.users}"
+
+
+class Message(models.Model):
+    """Message model for chat messages"""
+    messageId = models.AutoField(primary_key=True)
+    chatId = models.IntegerField()
+    senderId = models.CharField(max_length=255)
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'messages'
+        ordering = ['timestamp']
+
+    def __str__(self):
+        return f"Message {self.messageId} in Chat {self.chatId}"
+
