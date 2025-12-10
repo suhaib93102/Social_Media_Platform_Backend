@@ -25,26 +25,59 @@ def get_array_field(*args, **kwargs):
 class UserProfile(models.Model):
     """User profile model matching the users collection"""
     userId = models.CharField(max_length=255, primary_key=True, unique=True)
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, blank=True, null=True)
     gender = models.CharField(max_length=50, blank=True, null=True)
     age = models.IntegerField(null=True, blank=True)
     bio = models.TextField(blank=True, null=True)
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True, null=True, blank=True)
+    phone_number = models.CharField(max_length=20, unique=True, null=True, blank=True)
     password = models.CharField(max_length=255, null=True, blank=True)  # Hashed password
     profilePhoto = models.URLField(blank=True, null=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     updatedAt = models.DateTimeField(auto_now=True)
+    
+    # Location details
+    pincode = models.CharField(max_length=20, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Interests and pincodes
+    interests = models.JSONField(default=list, blank=True)
     activePincodes = models.JSONField(default=list, blank=True)
+    additional_pincodes = models.JSONField(default=list, blank=True)
+    
+    # Social
     followers = models.JSONField(default=list, blank=True)
     following = models.JSONField(default=list, blank=True)
+    
+    # Guest user flag
+    is_guest = models.BooleanField(default=False)
+    
     idCardUrl = models.URLField(blank=True, null=True)
 
     class Meta:
         db_table = 'users'
 
     def __str__(self):
-        return f"{self.name} ({self.userId})"
+        return f"{self.name} ({self.userId})" if self.name else f"User {self.userId}"
+    
+    USERNAME_FIELD = 'userId'
+    REQUIRED_FIELDS = []
+
+
+class Interest(models.Model):
+    """Interest model for user interests selection"""
+    interest_id = models.SlugField(max_length=100, primary_key=True, unique=True)
+    name = models.CharField(max_length=100)
+    image = models.URLField(blank=True, null=True)
+    
+    class Meta:
+        db_table = 'interests'
+    
+    def __str__(self):
+        return self.name
 
 
 class FollowRequest(models.Model):

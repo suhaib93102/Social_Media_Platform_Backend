@@ -1,33 +1,43 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
-from .models import UserProfile, FollowRequest, Follower, Post, Story, Chat, Message
+from .models import UserProfile, FollowRequest, Follower, Post, Story, Chat, Message, Interest
+
+
+class InterestSerializer(serializers.ModelSerializer):
+    """Serializer for Interest model"""
+    id = serializers.CharField(source='interest_id', read_only=True)
+    
+    class Meta:
+        model = Interest
+        fields = ['id', 'name', 'image']
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for UserProfile model"""
-    # Make password required for creating users (write-only)
-    password = serializers.CharField(write_only=True, required=True)
+    # Make password optional for creating users (can be null for guest users)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
     
     class Meta:
         model = UserProfile
         fields = [
-            'userId', 'name', 'gender', 'age', 'bio', 'email', 'password',
+            'userId', 'name', 'gender', 'age', 'bio', 'email', 'phone_number', 'password',
             'profilePhoto', 'latitude', 'longitude', 'updatedAt',
-            'activePincodes', 'followers', 'following', 'idCardUrl'
+            'pincode', 'city', 'state', 'country',
+            'interests', 'activePincodes', 'additional_pincodes',
+            'followers', 'following', 'is_guest', 'idCardUrl'
         ]
         read_only_fields = ['updatedAt']
         extra_kwargs = {'password': {'write_only': True}}
     
     def create(self, validated_data):
-        # Hash password before saving
-        if 'password' not in validated_data or not validated_data['password']:
-            raise serializers.ValidationError({'password': 'Password is required'})
-        validated_data['password'] = make_password(validated_data['password'])
+        # Hash password before saving if provided
+        if 'password' in validated_data and validated_data.get('password'):
+            validated_data['password'] = make_password(validated_data['password'])
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
         # Hash password if it's being updated
-        if 'password' in validated_data:
+        if 'password' in validated_data and validated_data.get('password'):
             validated_data['password'] = make_password(validated_data['password'])
         return super().update(instance, validated_data)
 

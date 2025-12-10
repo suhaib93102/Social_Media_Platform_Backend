@@ -6,7 +6,10 @@ from .views import (
     PostViewSet, StoryViewSet, ChatViewSet,
     UserPostsView, UserStoriesView, ChatMessagesView
 )
-from .auth_views import SignupView, LoginView
+from .auth_views import (
+    SignupView, LoginView, GetInterestsView, 
+    GuestLoginView, SetupProfileView, GetFeedView
+)
 
 # Create router for ViewSets
 router = DefaultRouter()
@@ -23,6 +26,12 @@ urlpatterns = [
     path('auth/signup/', SignupView.as_view(), name='auth-signup'),
     path('auth/login/', LoginView.as_view(), name='auth-login'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    
+    # Onboarding endpoints
+    path('get-interests/', GetInterestsView.as_view(), name='get-interests'),
+    path('login/guest/', GuestLoginView.as_view(), name='guest-login'),
+    path('setup-profile/', SetupProfileView.as_view(), name='setup-profile'),
+    path('get-feed/', GetFeedView.as_view(), name='get-feed'),
     
     # Router URLs
     path('', include(router.urls)),

@@ -1,0 +1,284 @@
+{
+	"info": {
+		"_postman_id": "pinmate-api-collection",
+		"name": "Pinmate API Collection",
+		"description": "Complete API collection for Pinmate - Social Media Platform",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Email Signup",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email_id\": \"yathaarthbatra10@gmail.com\",\n  \"password\": \"Yatha@1234\",\n  \"lat\": \"28.7041\",\n  \"long\": \"77.1025\",\n  \"interests\": [\"sports\", \"music\", \"travel\", \"technology\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/signup/",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "signup", ""]
+						}
+					}
+				},
+				{
+					"name": "Phone Signup",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"number\": \"7015926932\",\n  \"password\": \"Yatha@1234\",\n  \"lat\": \"12.9716\",\n  \"long\": \"77.5946\",\n  \"interests\": [\"technology\", \"music\", \"travel\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/signup/",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "signup", ""]
+						}
+					}
+				},
+				{
+					"name": "Email Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.tokens && jsonData.tokens.access) {",
+									"    pm.environment.set(\"access_token\", jsonData.tokens.access);",
+									"    pm.environment.set(\"refresh_token\", jsonData.tokens.refresh);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email_id\": \"yathaarthbatra10@gmail.com\",\n  \"password\": \"Yatha@1234\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login/",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login", ""]
+						}
+					}
+				},
+				{
+					"name": "Phone Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.tokens && jsonData.tokens.access) {",
+									"    pm.environment.set(\"access_token\", jsonData.tokens.access);",
+									"    pm.environment.set(\"refresh_token\", jsonData.tokens.refresh);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"number\": \"7015926932\",\n  \"password\": \"Yatha@1234\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login/",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login", ""]
+						}
+					}
+				},
+				{
+					"name": "Token Refresh",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/token/refresh/",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "token", "refresh", ""]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Onboarding",
+			"item": [
+				{
+					"name": "Get Interests",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"lat\": \"28.7041\",\n  \"long\": \"77.1025\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/get-interests/",
+							"host": ["{{base_url}}"],
+							"path": ["get-interests", ""]
+						}
+					}
+				},
+				{
+					"name": "Guest Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.tokens && jsonData.tokens.access) {",
+									"    pm.environment.set(\"access_token\", jsonData.tokens.access);",
+									"    pm.environment.set(\"refresh_token\", jsonData.tokens.refresh);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"interests\": [\"Art\", \"Travel\", \"Food\", \"Technology\"],\n  \"lat\": \"28.613939\",\n  \"long\": \"77.209021\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/login/guest/",
+							"host": ["{{base_url}}"],
+							"path": ["login", "guest", ""]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Profile",
+			"item": [
+				{
+					"name": "Setup Profile",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Yathaarth Batra\",\n  \"bio\": \"Software Developer at Pinmate\",\n  \"gender\": \"Male\",\n  \"age\": 25,\n  \"image_url\": \"https://example.com/profile.jpg\",\n  \"additional_pincodes\": [\"560002\", \"560003\", \"560004\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/setup-profile/",
+							"host": ["{{base_url}}"],
+							"path": ["setup-profile", ""]
+						}
+					}
+				},
+				{
+					"name": "Get Feed",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"lat\": \"37.7749\",\n  \"long\": \"-122.4194\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/get-feed/",
+							"host": ["{{base_url}}"],
+							"path": ["get-feed", ""]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://127.0.0.1:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
