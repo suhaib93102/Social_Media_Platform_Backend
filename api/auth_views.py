@@ -559,8 +559,32 @@ class GetInterestsView(APIView):
     POST /get-interests/
     Get available interests based on location
     Request: {"lat": "...", "long": "..."}
+    Requires authentication (Bearer token for logged-in or guest users)
     """
+    authentication_classes = []  # Disable DRF default authentication
+    permission_classes = []  # Disable DRF default permissions
+    
     def post(self, request):
+        # Get token from Authorization header
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if not auth_header.startswith('Bearer '):
+            return Response({'error': 'No authentication token provided'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        token = auth_header.replace('Bearer ', '').strip()
+        
+        # Decode and validate token
+        try:
+            access_token = AccessToken(token)
+            user_id = access_token['user_id']
+        except Exception:
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Verify user exists (can be regular user or guest)
+        try:
+            user = UserProfile.objects.get(userId=user_id)
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
         lat = request.data.get('lat')
         long = request.data.get('long')
         
