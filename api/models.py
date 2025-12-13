@@ -37,6 +37,9 @@ class UserProfile(models.Model):
     longitude = models.FloatField(null=True, blank=True)
     updatedAt = models.DateTimeField(auto_now=True)
     
+    # Device tracking for guest auto-entry
+    device_id = models.CharField(max_length=255, unique=True, null=True, blank=True, db_index=True)
+    
     # Location details
     pincode = models.CharField(max_length=20, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
@@ -103,6 +106,7 @@ class PendingSignup(models.Model):
     city = models.CharField(max_length=100)
     state = models.CharField(max_length=100)
     country = models.CharField(max_length=100)
+    device_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:

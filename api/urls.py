@@ -9,7 +9,7 @@ from .views import (
 from .auth_views import (
     SignupView, LoginView, GetInterestsView, 
     GuestLoginView, SetupProfileView, GetFeedView,
-    VerifyOTPView, SaveInterestsView
+    VerifyOTPView, SaveInterestsView, AppInitView
 )
 
 # Create router for ViewSets
@@ -23,6 +23,9 @@ router.register(r'chats', ChatViewSet, basename='chat')
 
 # URL patterns
 urlpatterns = [
+    # App initialization
+    path('app-init/', AppInitView.as_view(), name='app-init'),
+    
     # Authentication endpoints
     path('auth/signup/', SignupView.as_view(), name='auth-signup'),
     path('auth/login/', LoginView.as_view(), name='auth-login'),

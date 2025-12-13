@@ -6,6 +6,11 @@ from django.contrib.auth.hashers import check_password, make_password
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
 from .models import UserProfile, Interest, OTPVerification, PendingSignup
 from .serializers import UserProfileSerializer, InterestSerializer
+from .headers_util import (
+    get_headers, get_or_create_guest_user, is_debug_mode,
+    get_otp_for_debug_mode, verify_otp_in_debug_or_production,
+    get_otp_message
+)
 import uuid
 import requests
 import random
@@ -201,22 +206,40 @@ class SignupView(APIView):
     POST /auth/signup/
     Create a new user account with email_id or number
     With OTP verification support
-    Request: {"email_id": "...", "password": "...", "lat": "...", "long": "...", "interests": [...]}
-    or {"number": "...", "password": "...", "lat": "...", "long": "...", "interests": [...]}
-    Headers: is_debug: true/false
+    
+    Headers (Required):
+    - x-device-id: Unique device identifier
+    - x-app-mode: 'debug' or 'release'
+    
+    Request: 
+    {
+        "email_id": "...", 
+        "password": "...", 
+        "lat": "...", 
+        "long": "...", 
+        "interests": [...]
+    }
+    or
+    {
+        "number": "...", 
+        "password": "...", 
+        "lat": "...", 
+        "long": "...", 
+        "interests": [...]
+    }
     """
     def post(self, request):
+        # Get and validate headers
+        device_id, app_mode, _, headers_valid, headers_error = get_headers(request)
+        if not headers_valid:
+            return Response({'error': headers_error}, status=status.HTTP_400_BAD_REQUEST)
+        
         email_id = request.data.get('email_id')
         number = request.data.get('number')
         password = request.data.get('password')
         lat = request.data.get('lat')
         long = request.data.get('long')
         interests = request.data.get('interests', [])
-        
-        # Check debug mode from headers (supports both formats)
-        is_debug_header = request.headers.get('is_debug', request.headers.get('Is-Debug', 'false'))
-        is_debug = is_debug_header.lower() == 'true'
-        print(f"[DEBUG] is_debug header value: {is_debug_header}, parsed: {is_debug}")
         
         # Validate input
         if not password:
@@ -273,9 +296,9 @@ class SignupView(APIView):
         # Hash password
         hashed_password = make_password(password)
         
-        # Store pending signup data
+        # Store pending signup data with device_id
         PendingSignup.objects.filter(identifier=identifier).delete()  # Remove old pending signups
-        PendingSignup.objects.create(
+        pending = PendingSignup.objects.create(
             identifier=identifier,
             email=email_id,
             phone_number=number,
@@ -286,12 +309,15 @@ class SignupView(APIView):
             pincode=location_details['pincode'],
             city=location_details['city'],
             state=location_details['state'],
-            country=location_details['country']
+            country=location_details['country'],
+            device_id=device_id
         )
         
-        # If debug mode, skip OTP and create user immediately
-        if is_debug:
-            # Create user directly
+        # Check if debug mode
+        debug = is_debug_mode(app_mode)
+        
+        if debug:
+            # Debug mode: create user immediately without OTP
             user_data = {
                 'userId': user_id,
                 'email': email_id,
@@ -304,6 +330,7 @@ class SignupView(APIView):
                 'city': location_details['city'],
                 'state': location_details['state'],
                 'country': location_details['country'],
+                'device_id': device_id,
                 'is_guest': False
             }
             
@@ -315,11 +342,12 @@ class SignupView(APIView):
                 refresh = RefreshToken.for_user(user)
                 
                 # Clean up pending signup
-                PendingSignup.objects.filter(identifier=identifier).delete()
+                pending.delete()
                 
                 return Response({
                     'show_otp': False,
                     'message': 'User created successfully (debug mode)',
+                    'user_role': 'user',
                     'user': {
                         'userId': user.userId,
                         'name': user.name,
@@ -334,7 +362,7 @@ class SignupView(APIView):
             
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        # Generate and send OTP
+        # Production mode: Generate and send OTP
         otp_code = generate_otp()
         
         # Delete old OTP codes for this identifier
@@ -343,7 +371,7 @@ class SignupView(APIView):
         # Create new OTP record
         create_otp_record(identifier, otp_code)
         
-        # Send OTP via email or SMS
+        # Send OTP via email or SMS (skip in debug mode)
         if email_id:
             send_otp_email(email_id, otp_code)
         else:
@@ -351,7 +379,7 @@ class SignupView(APIView):
         
         return Response({
             'show_otp': True,
-            'message': 'OTP sent successfully. Please verify to complete signup.',
+            'message': get_otp_message(app_mode),
             'identifier': identifier
         }, status=status.HTTP_200_OK)
 
@@ -417,31 +445,59 @@ class VerifyOTPView(APIView):
     """
     POST /auth/verify-otp/
     Verify OTP and complete user registration
-    Request: {"identifier": "email or phone", "entered_otp": "123456"}
+    
+    Headers (Required):
+    - x-device-id: Unique device identifier
+    - x-app-mode: 'debug' or 'release'
+    
+    Request: {
+        "identifier": "email or phone", 
+        "entered_otp": "123456"
+    }
+    
+    Behavior:
+    - Debug mode: accepts fixed OTP '123456'
+    - Production mode: verifies actual OTP
+    - If device_id has guest user: upgrades guest to real user
+    - Otherwise: creates new user
     """
     def post(self, request):
+        # Get and validate headers
+        device_id, app_mode, _, headers_valid, headers_error = get_headers(request)
+        if not headers_valid:
+            return Response({'error': headers_error}, status=status.HTTP_400_BAD_REQUEST)
+        
         identifier = request.data.get('identifier')
         entered_otp = request.data.get('entered_otp')
         
         if not identifier or not entered_otp:
             return Response({'error': 'Identifier and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Find the most recent OTP for this identifier
-        try:
-            otp_record = OTPVerification.objects.filter(
-                identifier=identifier,
-                is_verified=False
-            ).latest('created_at')
-        except OTPVerification.DoesNotExist:
-            return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Check debug mode
+        debug = is_debug_mode(app_mode)
         
-        # Check if OTP is expired
-        if otp_record.is_expired():
-            return Response({'error': 'OTP has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Verify OTP
-        if otp_record.otp_code != str(entered_otp):
-            return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+        # Verify OTP based on mode
+        if debug:
+            # Debug mode: check for fixed OTP
+            if str(entered_otp) != '123456':
+                return Response({'error': 'Invalid OTP (use 123456 in debug mode)'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # Production mode: verify actual OTP
+            try:
+                otp_record = OTPVerification.objects.filter(
+                    identifier=identifier,
+                    is_verified=False
+                ).latest('created_at')
+            except OTPVerification.DoesNotExist:
+                return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if OTP is expired
+            if otp_record.is_expired():
+                return Response({'error': 'OTP has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verify OTP
+            if otp_record.otp_code != str(entered_otp):
+                return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Get pending signup data
         try:
@@ -455,21 +511,87 @@ class VerifyOTPView(APIView):
         else:
             user_id = f"user_{pending_signup.phone_number}"
         
-        # Create user
-        user_data = {
-            'userId': user_id,
-            'email': pending_signup.email,
-            'phone_number': pending_signup.phone_number,
-            'password': pending_signup.password,  # Already hashed
-            'latitude': pending_signup.latitude,
-            'longitude': pending_signup.longitude,
-            'interests': pending_signup.interests,
-            'pincode': pending_signup.pincode,
-            'city': pending_signup.city,
-            'state': pending_signup.state,
-            'country': pending_signup.country,
-            'is_guest': False
-        }
+        # Check if guest user exists with this device_id
+        guest_user = None
+        if device_id:
+            try:
+                guest_user = UserProfile.objects.get(device_id=device_id, is_guest=True)
+            except UserProfile.DoesNotExist:
+                pass
+        
+        if guest_user:
+            # Upgrade guest to user: update existing record
+            guest_user.userId = user_id
+            guest_user.email = pending_signup.email
+            guest_user.phone_number = pending_signup.phone_number
+            guest_user.password = pending_signup.password
+            guest_user.latitude = pending_signup.latitude
+            guest_user.longitude = pending_signup.longitude
+            guest_user.interests = pending_signup.interests
+            guest_user.pincode = pending_signup.pincode
+            guest_user.city = pending_signup.city
+            guest_user.state = pending_signup.state
+            guest_user.country = pending_signup.country
+            guest_user.is_guest = False
+            guest_user.save()
+            user = guest_user
+        else:
+            # Create new user
+            user_data = {
+                'userId': user_id,
+                'email': pending_signup.email,
+                'phone_number': pending_signup.phone_number,
+                'password': pending_signup.password,
+                'latitude': pending_signup.latitude,
+                'longitude': pending_signup.longitude,
+                'interests': pending_signup.interests,
+                'pincode': pending_signup.pincode,
+                'city': pending_signup.city,
+                'state': pending_signup.state,
+                'country': pending_signup.country,
+                'device_id': device_id,
+                'is_guest': False
+            }
+            
+            serializer = UserProfileSerializer(data=user_data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            user = serializer.save()
+        
+        # Mark OTP as verified (only in production mode)
+        if not debug:
+            try:
+                otp_record = OTPVerification.objects.get(identifier=identifier)
+                otp_record.is_verified = True
+                otp_record.save()
+            except OTPVerification.DoesNotExist:
+                pass
+        
+        # Delete pending signup
+        pending_signup.delete()
+        
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'message': 'User created successfully',
+            'user_role': 'user',
+            'user': {
+                'userId': user.userId,
+                'name': user.name,
+                'email': user.email
+            },
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token)
+            },
+            'location_details': {
+                'pincode': user.pincode,
+                'city': user.city,
+                'state': user.state,
+                'country': user.country
+            }
+        }, status=status.HTTP_200_OK)
         
         serializer = UserProfileSerializer(data=user_data)
         if serializer.is_valid():
@@ -727,6 +849,74 @@ class SetupProfileView(APIView):
             import traceback
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AppInitView(APIView):
+    """
+    POST /app-init/
+    Initialize app - auto-create guest user if no auth token
+    
+    Headers (Required):
+    - x-device-id: Unique device identifier
+    - x-app-mode: 'debug' or 'release'
+    
+    Headers (Optional):
+    - Authorization: Bearer <token> (if user is logged in)
+    
+    Behavior:
+    - If token provided: verify user exists, return user_role='user'
+    - If no token but device_id: auto-create/find guest user, return user_role='guest'
+    - Return user info and tokens
+    """
+    def post(self, request):
+        # Get and validate headers
+        device_id, app_mode, auth_token, headers_valid, headers_error = get_headers(request)
+        if not headers_valid:
+            return Response({'error': headers_error}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # If user has auth token, verify user exists
+        if auth_token:
+            try:
+                access_token = AccessToken(auth_token)
+                user_id = access_token['user_id']
+            except Exception:
+                return Response({'error': 'Invalid or expired token'}, status=status.HTTP_401_UNAUTHORIZED)
+            
+            try:
+                user = UserProfile.objects.get(userId=user_id)
+            except UserProfile.DoesNotExist:
+                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Return authenticated user
+            return Response({
+                'message': 'App initialized',
+                'user_role': 'user' if not user.is_guest else 'guest',
+                'user': {
+                    'userId': user.userId,
+                    'name': user.name,
+                    'email': user.email,
+                    'is_guest': user.is_guest
+                }
+            }, status=status.HTTP_200_OK)
+        
+        # No token: auto-create or find guest user with device_id
+        guest_user, created = get_or_create_guest_user(device_id)
+        
+        # Generate token for guest
+        refresh = RefreshToken.for_user(guest_user)
+        
+        return Response({
+            'message': 'Guest user ' + ('created' if created else 'found'),
+            'user_role': 'guest',
+            'user': {
+                'userId': guest_user.userId,
+                'is_guest': True
+            },
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token)
+            }
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class GetFeedView(APIView):
