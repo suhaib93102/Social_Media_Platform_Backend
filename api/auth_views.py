@@ -345,22 +345,22 @@ class SetupProfileView(APIView):
 class GetFeedView(APIView):
     """
     POST /get-feed/
-    Get user feed based on location
+    Get user feed based on location and interests
     Request: {"lat": "...", "long": "..."}
     Requires authentication
     """
     authentication_classes = []  # Disable DRF default authentication
     permission_classes = []  # Disable DRF default permissions
-    
+
     def post(self, request):
         try:
             # Get token from Authorization header
             auth_header = request.META.get('HTTP_AUTHORIZATION', '')
             if not auth_header.startswith('Bearer '):
                 return Response({'error': 'No authentication token provided'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+
             token = auth_header.replace('Bearer ', '').strip()
-            
+
             # Decode and validate token
             from rest_framework_simplejwt.tokens import AccessToken
             try:
@@ -368,24 +368,175 @@ class GetFeedView(APIView):
                 user_id = access_token['user_id']
             except Exception as e:
                 return Response({'error': 'Invalid or expired token'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+
             # Get user
             try:
                 user = UserProfile.objects.get(userId=user_id)
             except UserProfile.DoesNotExist:
                 return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-            
+
             lat = request.data.get('lat')
             long = request.data.get('long')
-            
+
             if not lat or not long:
                 return Response({'error': 'Location (lat, long) is required'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Placeholder response - implement feed logic based on requirements
+
+            # Get user's interests
+            user_interests = user.interests if user.interests else []
+
+            # Generate feed based on user's interests
+            feed_data = self.generate_interest_based_feed(user_interests, lat, long, user.is_guest)
+
             return Response({
-                'feed': [],
-                'message': 'Feed endpoint - to be implemented with business logic'
+                'feed': feed_data,
+                'user_interests': user_interests,
+                'is_guest': user.is_guest,
+                'location': {
+                    'lat': lat,
+                    'long': long,
+                    'city': user.city,
+                    'state': user.state
+                }
             }, status=status.HTTP_200_OK)
-        
+
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def generate_interest_based_feed(self, user_interests, lat, long, is_guest):
+        """
+        Generate mock feed data based on user's interests
+        In production, this would query actual posts/content from database
+        """
+        import random
+        import uuid
+        from datetime import datetime, timedelta
+
+        feed_items = []
+
+        # If no interests selected, return general feed
+        if not user_interests:
+            return [{
+                'id': str(uuid.uuid4()),
+                'type': 'general',
+                'title': 'Welcome to Pinmate!',
+                'content': 'Select your interests to get personalized content',
+                'timestamp': datetime.now().isoformat(),
+                'location': {'lat': lat, 'long': long}
+            }]
+
+        # Generate feed items for each interest
+        for interest in user_interests[:5]:  # Limit to first 5 interests for demo
+            # Create 2-3 posts per interest
+            for i in range(random.randint(2, 3)):
+                feed_item = {
+                    'id': str(uuid.uuid4()),
+                    'type': 'interest_post',
+                    'interest': interest,
+                    'title': f"{interest} Update #{i+1}",
+                    'content': self.generate_content_for_interest(interest),
+                    'image_url': f"https://picsum.photos/400/300?random={random.randint(1,1000)}",
+                    'author': {
+                        'name': f"User_{random.randint(1000,9999)}",
+                        'is_guest': random.choice([True, False])
+                    },
+                    'timestamp': (datetime.now() - timedelta(hours=random.randint(1, 24))).isoformat(),
+                    'location': {
+                        'lat': float(lat) + random.uniform(-0.01, 0.01),
+                        'long': float(long) + random.uniform(-0.01, 0.01),
+                        'distance': f"{random.uniform(0.5, 5.0):.1f} km away"
+                    },
+                    'engagement': {
+                        'likes': random.randint(0, 50),
+                        'comments': random.randint(0, 20),
+                        'shares': random.randint(0, 10)
+                    }
+                }
+                feed_items.append(feed_item)
+
+        # Sort by timestamp (most recent first)
+        feed_items.sort(key=lambda x: x['timestamp'], reverse=True)
+
+        # Add a welcome message for guest users
+        if is_guest and feed_items:
+            welcome_item = {
+                'id': str(uuid.uuid4()),
+                'type': 'welcome',
+                'title': '🎉 Welcome Guest!',
+                'content': f'Enjoying content about {", ".join(user_interests[:3])}... Create an account to connect with others!',
+                'timestamp': datetime.now().isoformat(),
+                'location': {'lat': lat, 'long': long}
+            }
+            feed_items.insert(0, welcome_item)
+
+        return feed_items[:20]  # Return max 20 items
+
+    def generate_content_for_interest(self, interest):
+        """
+        Generate sample content based on interest category
+        """
+        content_templates = {
+            'Art': [
+                'Check out this amazing digital artwork I created! 🎨',
+                'Art exhibition opening tonight - who\'s coming?',
+                'Learning watercolor painting, here\'s my progress!',
+                'Street art in the city is incredible!'
+            ],
+            'Travel': [
+                'Just arrived in an amazing new city! ✈️',
+                'Hidden gems you must visit in this location',
+                'Travel tips for budget backpacking',
+                'Sunset views from the mountain top!'
+            ],
+            'Food': [
+                'Homemade pasta that turned out amazing! 🍝',
+                'Street food adventure - trying local delicacies',
+                'New restaurant review: must-try dishes!',
+                'Cooking tutorial: easy 30-minute meals'
+            ],
+            'Technology': [
+                'Latest gadget review - is it worth it? 📱',
+                'Coding project I\'m working on',
+                'Tech news: major breakthrough announced!',
+                'Setting up my home automation system'
+            ],
+            'Fashion': [
+                'Outfit of the day! What do you think? 👗',
+                'Thrifting finds that I\'m loving',
+                'Fashion tips for different body types',
+                'Sustainable fashion brands to check out'
+            ],
+            'Fitness': [
+                'Morning workout complete! 💪 Feeling energized',
+                'New exercise routine that\'s working great',
+                'Healthy meal prep for the week',
+                'Running my first 10k - training updates!'
+            ],
+            'Photography': [
+                'Captured this amazing sunset shot 📸',
+                'Photography tips for beginners',
+                'Editing workflow that I use',
+                'Street photography collection'
+            ],
+            'Music': [
+                'New song I\'m working on 🎵',
+                'Concert review: best show ever!',
+                'Music discovery: check out this artist',
+                'Learning to play guitar - progress update'
+            ],
+            'Sports': [
+                'Game day! Let\'s go team! ⚽',
+                'Training session was intense today',
+                'Sports analysis: breaking down the match',
+                'Weekend hike completed - amazing views!'
+            ],
+            'DIY': [
+                'DIY project completed! So proud of this 🛠️',
+                'Upcycling old furniture into something new',
+                'Home improvement tips and tricks',
+                'Crafting tutorial: easy weekend projects'
+            ]
+        }
+
+        import random
+        templates = content_templates.get(interest, ['Sharing something interesting about ' + interest])
+        return random.choice(templates)
