@@ -1,473 +1,548 @@
-# 📋 **PINMATE API - POSTMAN TESTING GUIDE**
+# 📋 **PINMATE API - ONE-BY-ONE FEATURE TESTING**
 
 ## 🎯 **Overview**
-This guide provides comprehensive instructions for testing the Pinmate API endpoints using Postman. All endpoints are fully functional and ready for testing.
+This guide provides systematic one-by-one testing for each implemented feature. Test each feature individually to ensure proper implementation.
 
 ---
 
 ## 📦 **Prerequisites**
 
-### 1. **Install Postman**
-- Download and install Postman from [https://www.postman.com/downloads/](https://www.postman.com/downloads/)
-
-### 2. **Start Django Server**
+### 1. **Start Django Server**
 ```bash
 cd /Users/vishaljha/backend
+export NODE_ENV=development  # For debug testing
 python manage.py runserver
 ```
-Server will run on: `http://127.0.0.1:8000`
 
-### 3. **Import Postman Collection**
-1. Open Postman
-2. Click **"Import"** button
-3. Select **"File"** tab
-4. Choose: `Pinmate_API_Collection.postman_collection.json`
-5. Click **"Import"**
-
----
-
-## 🌍 **Environment Setup**
-
-### Create Environment Variables
-1. Click **"Environments"** (left sidebar)
-2. Click **"Create Environment"**
-3. Name it: `Pinmate API`
-4. Add these variables:
-
-| Variable | Initial Value | Description |
-|----------|---------------|-------------|
-| `base_url` | `http://127.0.0.1:8000` | API base URL |
-| `access_token` | `` | JWT access token (auto-set) |
-| `refresh_token` | `` | JWT refresh token (auto-set) |
-
-5. Click **"Save"**
-6. Select `Pinmate API` environment from dropdown
+### 2. **Postman Environment Setup**
+Create environment variables:
+- `base_url`: `http://127.0.0.1:8000`
+- `device_id`: `test-device-12345`
+- `access_token`: `` (leave empty)
+- `refresh_token`: `` (leave empty)
 
 ---
 
-## 🧪 **TESTING WORKFLOW**
+## 🧪 **FEATURE 1: HEADER ACCEPTANCE IN ALL APIs**
 
-### **Phase 1: Authentication Testing**
-
-#### **1.1 Email Login** ✅
+### **Test 1.1: Mandatory x-device-id**
 ```
 Method: POST
-URL: {{base_url}}/auth/login/
+URL: {{base_url}}/app-init/
 Headers:
   Content-Type: application/json
+  x-device-id: {{device_id}}
 
-Body (raw JSON):
+Body: (empty)
+```
+
+**Expected:** ✅ 201 Created (guest user created)
+```json
 {
-  "email_id": "yathaarthbatra10@gmail.com",
-  "password": "Yatha@1234"
+  "message": "Guest user created successfully",
+  "user_role": "guest",
+  "tokens": {...}
 }
 ```
 
-**Expected Response (200 OK):**
+### **Test 1.2: Missing x-device-id (Should Fail)**
+```
+Method: POST
+URL: {{base_url}}/app-init/
+Headers:
+  Content-Type: application/json
+
+Body: (empty)
+```
+
+**Expected:** ❌ 400 Bad Request
 ```json
 {
-  "message": "Login successful",
-  "user": {
-    "userId": "yathaarthbatra10",
-    "name": "Test User",
-    "email": "yathaarthbatra10@gmail.com",
-    "bio": "Software Developer",
-    "profilePhoto": "https://example.com/profile.jpg"
-  },
+  "error": "x-device-id header is required"
+}
+```
+
+### **Test 1.3: Optional x-app-mode**
+```
+Method: POST
+URL: {{base_url}}/app-init/
+Headers:
+  Content-Type: application/json
+  x-device-id: {{device_id}}
+  x-app-mode: debug
+
+Body: (empty)
+```
+
+**Expected:** ✅ Works with or without x-app-mode
+
+### **Test 1.4: Optional Authorization**
+```
+Method: POST
+URL: {{base_url}}/app-init/
+Headers:
+  Content-Type: application/json
+  x-device-id: {{device_id}}
+  Authorization: Bearer some-token
+
+Body: (empty)
+```
+
+**Expected:** ✅ Works with or without Authorization header
+
+---
+
+## 🧪 **FEATURE 2: GUEST AUTO ENTRY**
+
+### **Test 2.1: First API Hit - No Auth Token**
+```
+Method: POST
+URL: {{base_url}}/app-init/
+Headers:
+  Content-Type: application/json
+  x-device-id: guest-device-001
+
+Body: (empty)
+```
+
+**Expected:** ✅ 201 Created - New guest user
+```json
+{
+  "message": "Guest user created successfully",
+  "user_role": "guest",
   "tokens": {
-    "refresh": "eyJhbGciOiJIUzI1NiIs...",
-    "access": "eyJhbGciOiJIUzI1NiIs..."
+    "refresh": "...",
+    "access": "..."
   }
 }
 ```
 
-**✅ Test Result:** Tokens are automatically saved to environment variables
-
----
-
-#### **1.2 Phone Login** ✅
+### **Test 2.2: Same Device ID - Find Existing Guest**
 ```
 Method: POST
-URL: {{base_url}}/auth/login/
+URL: {{base_url}}/app-init/
 Headers:
   Content-Type: application/json
+  x-device-id: guest-device-001
 
-Body (raw JSON):
-{
-  "number": "7015926932",
-  "password": "Yatha@1234"
-}
+Body: (empty)
 ```
 
-**Expected Response (200 OK):**
+**Expected:** ✅ 200 OK - Existing guest user found
 ```json
 {
-  "message": "Login successful",
-  "user": {
-    "userId": "user_7015926932",
-    "name": null,
-    "email": null,
-    "bio": null,
-    "profilePhoto": null
-  },
+  "message": "Guest user found",
+  "user_role": "guest",
   "tokens": {
-    "refresh": "eyJhbGciOiJIUzI1NiIs...",
-    "access": "eyJhbGciOiJIUzI1NiIs..."
+    "refresh": "...",
+    "access": "..."
   }
 }
 ```
 
+### **Test 2.3: Different Device ID - New Guest**
+```
+Method: POST
+URL: {{base_url}}/app-init/
+Headers:
+  Content-Type: application/json
+  x-device-id: guest-device-002
+
+Body: (empty)
+```
+
+**Expected:** ✅ 201 Created - Different guest user
+
 ---
 
-### **Phase 2: Registration Testing**
+## 🧪 **FEATURE 3: OTP HANDLING (DEBUG VS RELEASE)**
 
-#### **2.1 Email Signup** ✅
+### **Test 3.1: Debug Mode - No SMS/Email**
+```bash
+export NODE_ENV=development
+```
 ```
 Method: POST
 URL: {{base_url}}/auth/signup/
 Headers:
   Content-Type: application/json
+  x-device-id: {{device_id}}
+  x-app-mode: debug
 
-Body (raw JSON):
+Body:
 {
-  "email_id": "newuser@example.com",
+  "email_id": "debug@example.com",
   "password": "TestPass123",
   "long": "77.5946",
   "lat": "12.9716",
-  "interests": ["sports", "music", "travel", "technology"]
+  "interests": ["technology"]
 }
 ```
 
-**Expected Response (201 Created):**
+**Expected:** ✅ 200 OK - No OTP sent
 ```json
 {
   "message": "User created successfully",
-  "user": {
-    "userId": "newuser",
-    "name": null,
-    "email": "newuser@example.com"
-  },
-  "tokens": {
-    "refresh": "eyJhbGciOiJIUzI1NiIs...",
-    "access": "eyJhbGciOiJIUzI1NiIs..."
-  },
-  "location_details": {
-    "pincode": "560001",
-    "city": "Bengaluru",
-    "state": "Karnataka",
-    "country": "India"
-  }
+  "show_otp": false,
+  "location_details": {...}
 }
 ```
 
----
-
-#### **2.2 Phone Signup** ✅
+### **Test 3.2: Production Mode - Real OTP**
+```bash
+export NODE_ENV=production
+```
 ```
 Method: POST
 URL: {{base_url}}/auth/signup/
 Headers:
   Content-Type: application/json
+  x-device-id: {{device_id}}
+  x-app-mode: production
 
-Body (raw JSON):
+Body:
 {
-  "number": "9999999999",
-  "password": "PhonePass123",
+  "email_id": "prod@example.com",
+  "password": "TestPass123",
   "long": "77.5946",
   "lat": "12.9716",
-  "interests": ["technology", "music", "travel"]
+  "interests": ["technology"]
 }
 ```
 
-**Expected Response (201 Created):**
+**Expected:** ✅ 200 OK - Real OTP sent
 ```json
 {
-  "message": "User created successfully",
-  "user": {
-    "userId": "user_9999999999",
-    "name": null,
-    "email": null
-  },
-  "tokens": {
-    "refresh": "eyJhbGciOiJIUzI1NiIs...",
-    "access": "eyJhbGciOiJIUzI1NiIs..."
-  },
-  "location_details": {
-    "pincode": "560001",
-    "city": "Bengaluru",
-    "state": "Karnataka",
-    "country": "India"
-  }
+  "message": "OTP sent successfully",
+  "show_otp": true
 }
 ```
 
 ---
 
-### **Phase 3: Core Features Testing**
+## 🧪 **FEATURE 4: OTP VERIFY LOGIC**
 
-#### **3.1 Get Interests** ✅
+### **Test 4.1: Debug Mode - Accept Fixed OTP**
+```bash
+export NODE_ENV=development
+```
+```
+Method: POST
+URL: {{base_url}}/auth/verify-otp/
+Headers:
+  Content-Type: application/json
+  x-device-id: {{device_id}}
+  x-app-mode: debug
+
+Body:
+{
+  "email_id": "debug@example.com",
+  "otp": "123456"
+}
+```
+
+**Expected:** ✅ 200 OK
+```json
+{
+  "message": "OTP verified successfully",
+  "user": {...}
+}
+```
+
+### **Test 4.2: Production Mode - Reject Fixed OTP**
+```bash
+export NODE_ENV=production
+```
+```
+Method: POST
+URL: {{base_url}}/auth/verify-otp/
+Headers:
+  Content-Type: application/json
+  x-device-id: {{device_id}}
+  x-app-mode: production
+
+Body:
+{
+  "email_id": "prod@example.com",
+  "otp": "123456"
+}
+```
+
+**Expected:** ❌ 400 Bad Request
+```json
+{
+  "error": "Invalid OTP for production mode"
+}
+```
+
+---
+
+## 🧪 **FEATURE 5: GUEST → USER UPGRADE**
+
+### **Test 5.1: Create Guest User**
+```
+Method: POST
+URL: {{base_url}}/app-init/
+Headers:
+  Content-Type: application/json
+  x-device-id: upgrade-device-001
+
+Body: (empty)
+```
+
+**Expected:** ✅ Guest created, note the user ID
+
+### **Test 5.2: Upgrade Guest to User**
+```bash
+export NODE_ENV=development
+```
+```
+Method: POST
+URL: {{base_url}}/auth/signup/
+Headers:
+  Content-Type: application/json
+  x-device-id: upgrade-device-001
+  x-app-mode: debug
+
+Body:
+{
+  "email_id": "upgrade@example.com",
+  "password": "UpgradePass123",
+  "long": "77.5946",
+  "lat": "12.9716",
+  "interests": ["technology"]
+}
+```
+
+**Expected:** ✅ Same user record updated
+```json
+{
+  "message": "User created successfully",
+  "user": {
+    "userId": "upgrade"  // Same as guest user ID
+  }
+}
+```
+
+### **Test 5.3: Verify Upgrade - Check User Role**
+```
+Method: POST
+URL: {{base_url}}/app-init/
+Headers:
+  Content-Type: application/json
+  x-device-id: upgrade-device-001
+
+Body: (empty)
+```
+
+**Expected:** ✅ Now returns "user" role
+```json
+{
+  "message": "User found",
+  "user_role": "user",  // Changed from "guest"
+  "tokens": {...}
+}
+```
+
+---
+
+## 🧪 **FEATURE 6: AUTH MIDDLEWARE**
+
+### **Test 6.1: Token Exists → Logged-in User**
+```
+Method: POST
+URL: {{base_url}}/get-interests/
+Headers:
+  Content-Type: application/json
+  x-device-id: {{device_id}}
+  Authorization: Bearer {{access_token}}
+
+Body:
+{
+  "long": "77.5946",
+  "lat": "12.9716"
+}
+```
+
+**Expected:** ✅ 200 OK - Authenticated user
+
+### **Test 6.2: No Token + Device ID → Guest User**
+```
+Method: POST
+URL: {{base_url}}/get-interests/
+Headers:
+  Content-Type: application/json
+  x-device-id: guest-device-001
+
+Body:
+{
+  "long": "77.5946",
+  "lat": "12.9716"
+}
+```
+
+**Expected:** ❌ 401 Unauthorized (if endpoint requires auth)
+```json
+{
+  "detail": "Authentication credentials were not provided."
+}
+```
+
+### **Test 6.3: No Token + No Device ID → Reject**
 ```
 Method: POST
 URL: {{base_url}}/get-interests/
 Headers:
   Content-Type: application/json
 
-Body (raw JSON):
+Body:
 {
   "long": "77.5946",
   "lat": "12.9716"
 }
 ```
 
-**Expected Response (200 OK):**
+**Expected:** ❌ 400 Bad Request
 ```json
 {
-  "interests": [
-    {
-      "id": "technology",
-      "name": "Technology",
-      "image": "https://example.com/images/technology.jpg"
-    },
-    {
-      "id": "art",
-      "name": "Art",
-      "image": "https://example.com/images/art.jpg"
-    },
-    {
-      "id": "travel",
-      "name": "Travel",
-      "image": "https://example.com/images/travel.jpg"
-    },
-    {
-      "id": "music",
-      "name": "Music",
-      "image": "https://example.com/images/music.jpg"
-    },
-    {
-      "id": "sports",
-      "name": "Sports",
-      "image": "https://example.com/images/sports.jpg"
-    },
-    {
-      "id": "food",
-      "name": "Food",
-      "image": "https://example.com/images/food.jpg"
-    },
-    {
-      "id": "photography",
-      "name": "Photography",
-      "image": "https://example.com/images/photography.jpg"
-    },
-    {
-      "id": "fashion",
-      "name": "Fashion",
-      "image": "https://example.com/images/fashion.jpg"
-    },
-    {
-      "id": "fitness",
-      "name": "Fitness",
-      "image": "https://example.com/images/fitness.jpg"
-    },
-    {
-      "id": "diy",
-      "name": "DIY",
-      "image": "https://example.com/images/diy.jpg"
-    }
-  ]
+  "error": "x-device-id header is required"
 }
 ```
 
 ---
 
-#### **3.2 Guest Login** ✅
+## 🧪 **FEATURE 7: SECURITY MEASURES**
+
+### **Test 7.1: Reject Missing Device ID**
 ```
 Method: POST
-URL: {{base_url}}/login/guest/
+URL: {{base_url}}/auth/signup/
 Headers:
   Content-Type: application/json
+  x-app-mode: debug
 
-Body (raw JSON):
+Body:
 {
-  "interests": [
-    "Art", "Travel", "Food", "Technology",
-    "Fashion", "Fitness", "Photography", "Music", "Sports", "DIY"
-  ],
+  "email_id": "test@example.com",
+  "password": "TestPass123",
   "long": "77.5946",
-  "lat": "12.9716"
-}
-```
-
-**Expected Response (201 Created):**
-```json
-{
-  "message": "Guest user registered successfully",
-  "user": {
-    "is_guest": true
-  },
-  "tokens": {
-    "refresh": "eyJhbGciOiJIUzI1NiIs...",
-    "access": "eyJhbGciOiJIUzI1NiIs..."
-  }
-}
-```
-
----
-
-### **Phase 4: Protected Endpoints Testing**
-
-#### **4.1 Get Feed** ✅
-```
-Method: POST
-URL: {{base_url}}/get-feed/
-Headers:
-  Content-Type: application/json
-  Authorization: Bearer {{access_token}}
-
-Body (raw JSON):
-{
   "lat": "12.9716",
-  "long": "77.5946"
+  "interests": ["technology"]
 }
 ```
 
-**Expected Response (200 OK):**
+**Expected:** ❌ 400 Bad Request
 ```json
 {
-  "feed": [],
-  "message": "Feed endpoint - to be implemented with business logic"
+  "error": "x-device-id header is required"
 }
 ```
 
----
-
-#### **4.2 Setup Profile** ✅
+### **Test 7.2: Block OTP Bypass in Production**
+```bash
+export NODE_ENV=production
+```
 ```
 Method: POST
-URL: {{base_url}}/setup-profile/
+URL: {{base_url}}/auth/verify-otp/
 Headers:
   Content-Type: application/json
-  Authorization: Bearer {{access_token}}
+  x-device-id: {{device_id}}
+  x-app-mode: debug  # Even if debug mode requested
 
-Body (raw JSON):
+Body:
 {
-  "name": "Yathaarth Batra",
-  "bio": "Software Developer at Pinmate",
-  "gender": "Male",
-  "age": 25,
-  "image_url": "https://example.com/profile.jpg",
-  "additional_pincodes": ["560002", "560003", "560004"]
+  "email_id": "prod@example.com",
+  "otp": "123456"
 }
 ```
 
-**Expected Response (200 OK):**
+**Expected:** ❌ 400 Bad Request (NODE_ENV takes precedence)
 ```json
 {
-  "message": "Profile Details saved successfully."
+  "error": "Invalid OTP for production mode"
 }
 ```
 
----
+### **Test 7.3: All Endpoints Require Device ID**
+Test any endpoint without `x-device-id`:
+- `/auth/signup/`
+- `/auth/verify-otp/`
+- `/get-interests/`
+- `/app-init/`
 
-## 🔄 **Token Refresh Testing**
-
-#### **Token Refresh** ✅
-```
-Method: POST
-URL: {{base_url}}/auth/token/refresh/
-Headers:
-  Content-Type: application/json
-
-Body (raw JSON):
-{
-  "refresh": "{{refresh_token}}"
-}
-```
-
-**Expected Response (200 OK):**
-```json
-{
-  "access": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
+**Expected:** ❌ All should return 400 Bad Request
 
 ---
 
 ## 📊 **TESTING CHECKLIST**
 
-### **Authentication Endpoints**
-- [ ] Email Login (existing user)
-- [ ] Phone Login (existing user)
-- [ ] Email Signup (new user)
-- [ ] Phone Signup (new user)
-- [ ] Guest Login
-- [ ] Token Refresh
+### **Feature 1: Header Acceptance**
+- [ ] x-device-id mandatory validation
+- [ ] x-app-mode optional
+- [ ] Authorization optional
+- [ ] All APIs accept these headers
 
-### **Core Features**
-- [ ] Get Interests
-- [ ] Get Feed (authenticated)
-- [ ] Setup Profile (authenticated)
+### **Feature 2: Guest Auto Entry**
+- [ ] First hit creates guest user
+- [ ] Same device finds existing guest
+- [ ] Returns user_role: "guest"
+- [ ] Different devices create different guests
 
-### **Error Scenarios**
-- [ ] Invalid credentials
-- [ ] Duplicate email/phone
-- [ ] Missing authentication
-- [ ] Invalid coordinates
-- [ ] Malformed requests
+### **Feature 3: OTP Handling**
+- [ ] Debug mode: no SMS/email, show_otp: false
+- [ ] Production mode: real OTP sent, show_otp: true
+- [ ] NODE_ENV controls behavior
 
----
+### **Feature 4: OTP Verify Logic**
+- [ ] Debug accepts "123456"
+- [ ] Production rejects "123456"
+- [ ] Production verifies real OTP
 
-## 🚨 **Common Issues & Solutions**
+### **Feature 5: Guest → User Upgrade**
+- [ ] Same user record updated
+- [ ] No duplicate user created
+- [ ] Role changes from guest to user
+- [ ] Device ID link preserved
 
-### **401 Unauthorized**
-- **Issue:** Missing or invalid token
-- **Solution:** Ensure you have a valid `access_token` in environment variables
+### **Feature 6: Auth Middleware**
+- [ ] Token → logged-in user
+- [ ] No token + device ID → guest user
+- [ ] No token + no device ID → rejected
 
-### **400 Bad Request**
-- **Issue:** Invalid request format
-- **Solution:** Check JSON syntax and required fields
-
-### **500 Internal Server Error**
-- **Issue:** Server error
-- **Solution:** Check Django server logs for details
-
-### **Environment Variables Not Set**
-- **Issue:** Tokens not saving automatically
-- **Solution:** Manually set `access_token` and `refresh_token` in environment
-
----
-
-## 📈 **Performance Testing**
-
-### **Response Times**
-- Authentication: < 200ms
-- Registration: < 500ms (includes geocoding)
-- Feed/Profile: < 100ms
-
-### **Load Testing**
-- Concurrent users: 100+
-- Requests per second: 50+
+### **Feature 7: Security**
+- [ ] All requests rejected without x-device-id
+- [ ] Production blocks OTP bypass regardless of x-app-mode
+- [ ] NODE_ENV takes precedence over x-app-mode
 
 ---
 
 ## 🎯 **SUCCESS CRITERIA**
 
-✅ **All endpoints return expected HTTP status codes**  
-✅ **All endpoints return properly formatted JSON responses**  
-✅ **Authentication tokens are generated and validated**  
-✅ **Location geocoding works for valid coordinates**  
-✅ **User data is properly stored and retrieved**  
-✅ **Error handling works for invalid inputs**  
+✅ **All 7 features implemented and tested individually**  
+✅ **Each test case produces expected results**  
+✅ **Security measures prevent unauthorized access**  
+✅ **Debug/production modes work correctly**  
+✅ **Guest-to-user upgrade preserves data integrity**  
 
 ---
 
-## 📞 **Support**
+## 📞 **Quick Test Commands**
 
-If you encounter any issues:
-1. Check the Django server logs: `tail -f /Users/vishaljha/backend/logs/django.log`
-2. Verify environment variables are set correctly
-3. Ensure the server is running on port 8000
-4. Check network connectivity for geocoding API
+```bash
+# Test header validation
+curl -X POST http://127.0.0.1:8000/app-init/ \
+  -H "Content-Type: application/json"
+
+# Should fail: {"error": "x-device-id header is required"}
+
+curl -X POST http://127.0.0.1:8000/app-init/ \
+  -H "Content-Type: application/json" \
+  -H "x-device-id: test-device-123"
+
+# Should succeed: {"message": "Guest user created successfully", "user_role": "guest"}
+```
 
 ---
 
-**🎉 Happy Testing! Your Pinmate API is fully functional and ready for production use.**
+**🎉 Test each feature one-by-one to ensure complete implementation!**

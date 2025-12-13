@@ -317,36 +317,40 @@ class SignupView(APIView):
         debug = is_debug_mode(app_mode)
         
         if debug:
-            # Debug mode: create user immediately without OTP
-            user_data = {
-                'userId': user_id,
-                'email': email_id,
-                'phone_number': number,
-                'password': hashed_password,
-                'latitude': float(lat),
-                'longitude': float(long),
-                'interests': interests,
-                'pincode': location_details['pincode'],
-                'city': location_details['city'],
-                'state': location_details['state'],
-                'country': location_details['country'],
-                'device_id': device_id,
-                'is_guest': False
-            }
+            # Debug mode: check for existing guest user to upgrade
+            guest_user = None
+            if device_id:
+                try:
+                    guest_user = UserProfile.objects.get(device_id=device_id, is_guest=True)
+                except UserProfile.DoesNotExist:
+                    pass
             
-            serializer = UserProfileSerializer(data=user_data)
-            if serializer.is_valid():
-                user = serializer.save()
-                
-                # Generate JWT tokens
-                refresh = RefreshToken.for_user(user)
+            if guest_user:
+                # Upgrade guest to user: update existing record
+                guest_user.userId = user_id
+                guest_user.email = email_id
+                guest_user.phone_number = number
+                guest_user.password = hashed_password
+                guest_user.latitude = float(lat)
+                guest_user.longitude = float(long)
+                guest_user.interests = interests
+                guest_user.pincode = location_details['pincode']
+                guest_user.city = location_details['city']
+                guest_user.state = location_details['state']
+                guest_user.country = location_details['country']
+                guest_user.is_guest = False
+                guest_user.save()
+                user = guest_user
                 
                 # Clean up pending signup
                 pending.delete()
                 
+                # Generate JWT tokens
+                refresh = RefreshToken.for_user(user)
+                
                 return Response({
                     'show_otp': False,
-                    'message': 'User created successfully (debug mode)',
+                    'message': 'Guest upgraded to user successfully (debug mode)',
                     'user_role': 'user',
                     'user': {
                         'userId': user.userId,
@@ -358,9 +362,52 @@ class SignupView(APIView):
                         'access': str(refresh.access_token)
                     },
                     'location_details': location_details
-                }, status=status.HTTP_201_CREATED)
-            
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                }, status=status.HTTP_200_OK)
+            else:
+                # Create new user
+                user_data = {
+                    'userId': user_id,
+                    'email': email_id,
+                    'phone_number': number,
+                    'password': hashed_password,
+                    'latitude': float(lat),
+                    'longitude': float(long),
+                    'interests': interests,
+                    'pincode': location_details['pincode'],
+                    'city': location_details['city'],
+                    'state': location_details['state'],
+                    'country': location_details['country'],
+                    'device_id': device_id,
+                    'is_guest': False
+                }
+                
+                serializer = UserProfileSerializer(data=user_data)
+                if serializer.is_valid():
+                    user = serializer.save()
+                    
+                    # Generate JWT tokens
+                    refresh = RefreshToken.for_user(user)
+                    
+                    # Clean up pending signup
+                    pending.delete()
+                    
+                    return Response({
+                        'show_otp': False,
+                        'message': 'User created successfully (debug mode)',
+                        'user_role': 'user',
+                        'user': {
+                            'userId': user.userId,
+                            'name': user.name,
+                            'email': user.email
+                        },
+                        'tokens': {
+                            'refresh': str(refresh),
+                            'access': str(refresh.access_token)
+                        },
+                        'location_details': location_details
+                    }, status=status.HTTP_201_CREATED)
+                
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         # Production mode: Generate and send OTP
         otp_code = generate_otp()
