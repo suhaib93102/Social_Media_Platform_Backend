@@ -55,6 +55,9 @@ class UserProfile(models.Model):
     # Guest user flag
     is_guest = models.BooleanField(default=False)
     
+    # Address
+    address_details = models.TextField(blank=True, null=True)
+    
     idCardUrl = models.URLField(blank=True, null=True)
 
     class Meta:
@@ -65,6 +68,49 @@ class UserProfile(models.Model):
     
     USERNAME_FIELD = 'userId'
     REQUIRED_FIELDS = []
+
+
+class OTPVerification(models.Model):
+    """Store OTP codes for email/phone verification"""
+    identifier = models.CharField(max_length=255, db_index=True)  # email or phone
+    otp_code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_verified = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = 'otp_verifications'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"OTP for {self.identifier}"
+    
+    def is_expired(self):
+        from django.utils import timezone
+        return timezone.now() > self.expires_at
+
+
+class PendingSignup(models.Model):
+    """Store signup data until OTP is verified"""
+    identifier = models.CharField(max_length=255, unique=True, db_index=True)  # email or phone
+    email = models.EmailField(null=True, blank=True)
+    phone_number = models.CharField(max_length=20, null=True, blank=True)
+    password = models.CharField(max_length=255)  # Hashed password
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    interests = models.JSONField(default=list)
+    pincode = models.CharField(max_length=20)
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    country = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'pending_signups'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Pending signup for {self.identifier}"
 
 
 class Interest(models.Model):

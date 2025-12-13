@@ -2,12 +2,63 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
-from .models import UserProfile, Interest
+from .models import UserProfile, Interest, OTPVerification, PendingSignup
 from .serializers import UserProfileSerializer, InterestSerializer
 import uuid
 import requests
+import random
+from datetime import timedelta
+from django.utils import timezone
+
+
+def generate_otp():
+    """Generate a 6-digit OTP code"""
+    return str(random.randint(100000, 999999))
+
+
+def send_otp_email(email, otp_code):
+    """
+    Send OTP via email
+    For production, integrate with email service (SendGrid, AWS SES, etc.)
+    """
+    try:
+        # TODO: Implement actual email sending
+        # For now, just print to console (development mode)
+        print(f"[OTP EMAIL] Sending OTP {otp_code} to {email}")
+        print(f"Email would be sent with subject: 'Your Pinmate Verification Code'")
+        print(f"Body: 'Your verification code is: {otp_code}. Valid for 10 minutes.'")
+        return True
+    except Exception as e:
+        print(f"Error sending email OTP: {e}")
+        return False
+
+
+def send_otp_sms(phone_number, otp_code):
+    """
+    Send OTP via SMS
+    For production, integrate with SMS service (Twilio, AWS SNS, etc.)
+    """
+    try:
+        # TODO: Implement actual SMS sending
+        # For now, just print to console (development mode)
+        print(f"[OTP SMS] Sending OTP {otp_code} to {phone_number}")
+        print(f"SMS would be sent: 'Your Pinmate verification code is: {otp_code}. Valid for 10 minutes.'")
+        return True
+    except Exception as e:
+        print(f"Error sending SMS OTP: {e}")
+        return False
+
+
+def create_otp_record(identifier, otp_code):
+    """Create OTP verification record"""
+    expires_at = timezone.now() + timedelta(minutes=10)
+    OTPVerification.objects.create(
+        identifier=identifier,
+        otp_code=otp_code,
+        expires_at=expires_at
+    )
 
 
 def get_location_details(lat, long):
@@ -82,8 +133,10 @@ class SignupView(APIView):
     """
     POST /auth/signup/
     Create a new user account with email_id or number
+    With OTP verification support
     Request: {"email_id": "...", "password": "...", "lat": "...", "long": "...", "interests": [...]}
     or {"number": "...", "password": "...", "lat": "...", "long": "...", "interests": [...]}
+    Headers: is_debug: true/false
     """
     def post(self, request):
         email_id = request.data.get('email_id')
@@ -92,6 +145,11 @@ class SignupView(APIView):
         lat = request.data.get('lat')
         long = request.data.get('long')
         interests = request.data.get('interests', [])
+        
+        # Check debug mode from headers (supports both formats)
+        is_debug_header = request.headers.get('is_debug', request.headers.get('Is-Debug', 'false'))
+        is_debug = is_debug_header.lower() == 'true'
+        print(f"[DEBUG] is_debug header value: {is_debug_header}, parsed: {is_debug}")
         
         # Validate input
         if not password:
@@ -109,8 +167,10 @@ class SignupView(APIView):
         # Generate userId from email or phone
         if email_id:
             user_id = email_id.split('@')[0]
+            identifier = email_id
         else:
             user_id = f"user_{number}"
+            identifier = number
         
         # Check if user already exists
         if UserProfile.objects.filter(userId=user_id).exists():
@@ -122,44 +182,90 @@ class SignupView(APIView):
         if number and UserProfile.objects.filter(phone_number=number).exists():
             return Response({'error': 'Phone number already registered'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Create user data
-        user_data = {
-            'userId': user_id,
-            'email': email_id,
-            'phone_number': number,
-            'password': password,
-            'latitude': float(lat),
-            'longitude': float(long),
-            'interests': interests,
-            'pincode': location_details['pincode'],
-            'city': location_details['city'],
-            'state': location_details['state'],
-            'country': location_details['country'],
-            'is_guest': False
-        }
+        # Hash password
+        hashed_password = make_password(password)
         
-        serializer = UserProfileSerializer(data=user_data)
-        if serializer.is_valid():
-            user = serializer.save()
-            
-            # Generate JWT tokens
-            refresh = RefreshToken.for_user(user)
-            
-            return Response({
-                'message': 'User created successfully',
-                'user': {
-                    'userId': user.userId,
-                    'name': user.name,
-                    'email': user.email
-                },
-                'tokens': {
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token)
-                },
-                'location_details': location_details
-            }, status=status.HTTP_201_CREATED)
+        # Store pending signup data
+        PendingSignup.objects.filter(identifier=identifier).delete()  # Remove old pending signups
+        PendingSignup.objects.create(
+            identifier=identifier,
+            email=email_id,
+            phone_number=number,
+            password=hashed_password,
+            latitude=float(lat),
+            longitude=float(long),
+            interests=interests,
+            pincode=location_details['pincode'],
+            city=location_details['city'],
+            state=location_details['state'],
+            country=location_details['country']
+        )
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # If debug mode, skip OTP and create user immediately
+        if is_debug:
+            # Create user directly
+            user_data = {
+                'userId': user_id,
+                'email': email_id,
+                'phone_number': number,
+                'password': hashed_password,
+                'latitude': float(lat),
+                'longitude': float(long),
+                'interests': interests,
+                'pincode': location_details['pincode'],
+                'city': location_details['city'],
+                'state': location_details['state'],
+                'country': location_details['country'],
+                'is_guest': False
+            }
+            
+            serializer = UserProfileSerializer(data=user_data)
+            if serializer.is_valid():
+                user = serializer.save()
+                
+                # Generate JWT tokens
+                refresh = RefreshToken.for_user(user)
+                
+                # Clean up pending signup
+                PendingSignup.objects.filter(identifier=identifier).delete()
+                
+                return Response({
+                    'show_otp': False,
+                    'message': 'User created successfully (debug mode)',
+                    'user': {
+                        'userId': user.userId,
+                        'name': user.name,
+                        'email': user.email
+                    },
+                    'tokens': {
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token)
+                    },
+                    'location_details': location_details
+                }, status=status.HTTP_201_CREATED)
+            
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Generate and send OTP
+        otp_code = generate_otp()
+        
+        # Delete old OTP codes for this identifier
+        OTPVerification.objects.filter(identifier=identifier).delete()
+        
+        # Create new OTP record
+        create_otp_record(identifier, otp_code)
+        
+        # Send OTP via email or SMS
+        if email_id:
+            send_otp_email(email_id, otp_code)
+        else:
+            send_otp_sms(number, otp_code)
+        
+        return Response({
+            'show_otp': True,
+            'message': 'OTP sent successfully. Please verify to complete signup.',
+            'identifier': identifier
+        }, status=status.HTTP_200_OK)
 
 
 class LoginView(APIView):
@@ -209,6 +315,147 @@ class LoginView(APIView):
                 'refresh': str(refresh),
                 'access': str(refresh.access_token)
             }
+        }, status=status.HTTP_200_OK)
+
+
+class VerifyOTPView(APIView):
+    """
+    POST /auth/verify-otp/
+    Verify OTP and complete user registration
+    Request: {"identifier": "email or phone", "entered_otp": "123456"}
+    """
+    def post(self, request):
+        identifier = request.data.get('identifier')
+        entered_otp = request.data.get('entered_otp')
+        
+        if not identifier or not entered_otp:
+            return Response({'error': 'Identifier and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Find the most recent OTP for this identifier
+        try:
+            otp_record = OTPVerification.objects.filter(
+                identifier=identifier,
+                is_verified=False
+            ).latest('created_at')
+        except OTPVerification.DoesNotExist:
+            return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if OTP is expired
+        if otp_record.is_expired():
+            return Response({'error': 'OTP has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify OTP
+        if otp_record.otp_code != str(entered_otp):
+            return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get pending signup data
+        try:
+            pending_signup = PendingSignup.objects.get(identifier=identifier)
+        except PendingSignup.DoesNotExist:
+            return Response({'error': 'Signup data not found. Please start signup again.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Generate userId
+        if pending_signup.email:
+            user_id = pending_signup.email.split('@')[0]
+        else:
+            user_id = f"user_{pending_signup.phone_number}"
+        
+        # Create user
+        user_data = {
+            'userId': user_id,
+            'email': pending_signup.email,
+            'phone_number': pending_signup.phone_number,
+            'password': pending_signup.password,  # Already hashed
+            'latitude': pending_signup.latitude,
+            'longitude': pending_signup.longitude,
+            'interests': pending_signup.interests,
+            'pincode': pending_signup.pincode,
+            'city': pending_signup.city,
+            'state': pending_signup.state,
+            'country': pending_signup.country,
+            'is_guest': False
+        }
+        
+        serializer = UserProfileSerializer(data=user_data)
+        if serializer.is_valid():
+            user = serializer.save()
+            
+            # Mark OTP as verified
+            otp_record.is_verified = True
+            otp_record.save()
+            
+            # Delete pending signup
+            pending_signup.delete()
+            
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'message': 'User created successfully',
+                'user': {
+                    'userId': user.userId,
+                    'name': user.name,
+                    'email': user.email
+                },
+                'tokens': {
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token)
+                },
+                'location_details': {
+                    'pincode': user.pincode,
+                    'city': user.city,
+                    'state': user.state,
+                    'country': user.country
+                }
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SaveInterestsView(APIView):
+    """
+    POST /save-interests/
+    Save/update user interests
+    Request: {"interests": ["tech", "sports", "entertainment"]}
+    Requires authentication
+    """
+    authentication_classes = []
+    permission_classes = []
+    
+    def post(self, request):
+        # Get token from Authorization header
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if not auth_header.startswith('Bearer '):
+            return Response({'error': 'No authentication token provided'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        token = auth_header.replace('Bearer ', '').strip()
+        
+        # Decode and validate token
+        try:
+            access_token = AccessToken(token)
+            user_id = access_token['user_id']
+        except Exception:
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Get user
+        try:
+            user = UserProfile.objects.get(userId=user_id)
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get interests from request
+        interests = request.data.get('interests', [])
+        
+        if not isinstance(interests, list):
+            return Response({'error': 'Interests must be an array'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update user interests
+        user.interests = interests
+        user.save()
+        
+        return Response({
+            'message': 'Interests added',
+            'interests': user.interests
         }, status=status.HTTP_200_OK)
 
 
@@ -290,7 +537,7 @@ class SetupProfileView(APIView):
     """
     POST /setup-profile/
     Update user profile with additional details
-    Request: {"name": "...", "bio": "...", "gender": "...", "age": 25, "image_url": "...", "additional_pincodes": [...]}
+    Request: {"name": "...", "bio": "...", "gender": "...", "age": 25, "image_url": "...", "additional_pincodes": [...], "address_details": "..."}
     Requires authentication
     """
     authentication_classes = []  # Disable DRF default authentication
@@ -332,6 +579,8 @@ class SetupProfileView(APIView):
                 user.profilePhoto = request.data['image_url']
             if 'additional_pincodes' in request.data:
                 user.additional_pincodes = request.data['additional_pincodes']
+            if 'address_details' in request.data:
+                user.address_details = request.data['address_details']
             
             user.save()
             return Response({'message': 'Profile Details saved successfully.'}, status=status.HTTP_200_OK)

@@ -8,7 +8,8 @@ from .views import (
 )
 from .auth_views import (
     SignupView, LoginView, GetInterestsView, 
-    GuestLoginView, SetupProfileView, GetFeedView
+    GuestLoginView, SetupProfileView, GetFeedView,
+    VerifyOTPView, SaveInterestsView
 )
 
 # Create router for ViewSets
@@ -25,10 +26,12 @@ urlpatterns = [
     # Authentication endpoints
     path('auth/signup/', SignupView.as_view(), name='auth-signup'),
     path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('auth/verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
     
     # Onboarding endpoints
     path('get-interests/', GetInterestsView.as_view(), name='get-interests'),
+    path('save-interests/', SaveInterestsView.as_view(), name='save-interests'),
     path('login/guest/', GuestLoginView.as_view(), name='guest-login'),
     path('setup-profile/', SetupProfileView.as_view(), name='setup-profile'),
     path('get-feed/', GetFeedView.as_view(), name='get-feed'),
