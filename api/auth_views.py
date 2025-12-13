@@ -9,8 +9,75 @@ from .serializers import UserProfileSerializer, InterestSerializer
 import uuid
 import requests
 import random
+import re
 from datetime import timedelta
 from django.utils import timezone
+
+
+def validate_phone_number(phone_number):
+    """
+    Validate phone number - must be 10 digits and numeric only
+    Returns (is_valid, error_message)
+    """
+    if not phone_number:
+        return False, "Phone number is required"
+    
+    # Remove any spaces or special characters
+    cleaned_number = re.sub(r'[^\d]', '', phone_number)
+    
+    # Check if it's exactly 10 digits
+    if len(cleaned_number) != 10:
+        return False, "Phone number must be exactly 10 digits"
+    
+    # Check if it's all numeric
+    if not cleaned_number.isdigit():
+        return False, "Phone number must contain only digits"
+    
+    return True, cleaned_number
+
+
+def validate_coordinates(lat, long):
+    """
+    Validate latitude and longitude coordinates
+    Returns (is_valid, error_message, lat_float, long_float)
+    """
+    try:
+        lat_float = float(lat)
+        long_float = float(long)
+        
+        # Check if coordinates are in valid range
+        if not (-90 <= lat_float <= 90):
+            return False, "Latitude must be between -90 and 90", None, None
+        
+        if not (-180 <= long_float <= 180):
+            return False, "Longitude must be between -180 and 180", None, None
+        
+        return True, None, lat_float, long_float
+        
+    except (ValueError, TypeError):
+        return False, "Invalid coordinate format. Must be valid numbers", None, None
+
+
+def validate_pincode(pincode):
+    """
+    Validate pincode - must be 6 digits for India
+    Returns (is_valid, error_message, cleaned_pincode)
+    """
+    if not pincode:
+        return True, None, None  # Pincode is optional
+    
+    # Remove any spaces or special characters
+    cleaned_pincode = re.sub(r'[^\d]', '', str(pincode))
+    
+    # Check if it's exactly 6 digits (Indian pincode format)
+    if len(cleaned_pincode) != 6:
+        return False, "Pincode must be exactly 6 digits", None
+    
+    # Check if it's all numeric
+    if not cleaned_pincode.isdigit():
+        return False, "Pincode must contain only digits", None
+    
+    return True, None, cleaned_pincode
 
 
 def generate_otp():
@@ -161,8 +228,29 @@ class SignupView(APIView):
         if not lat or not long:
             return Response({'error': 'Location (lat, long) is required'}, status=status.HTTP_400_BAD_REQUEST)
         
+        # Validate phone number if provided
+        if number:
+            is_valid, phone_result = validate_phone_number(number)
+            if not is_valid:
+                return Response({'error': phone_result}, status=status.HTTP_400_BAD_REQUEST)
+            number = phone_result  # Use cleaned phone number
+        
+        # Validate coordinates
+        coords_valid, coords_error, lat_float, long_float = validate_coordinates(lat, long)
+        if not coords_valid:
+            return Response({'error': coords_error}, status=status.HTTP_400_BAD_REQUEST)
+        
         # Get location details from coordinates
         location_details = get_location_details(lat, long)
+        
+        # Validate pincode from location details
+        pincode_valid, pincode_error, cleaned_pincode = validate_pincode(location_details.get('pincode'))
+        if not pincode_valid:
+            return Response({'error': f"Invalid pincode from location: {pincode_error}"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Use cleaned pincode if valid, otherwise use original
+        if cleaned_pincode:
+            location_details['pincode'] = cleaned_pincode
         
         # Generate userId from email or phone
         if email_id:
@@ -285,6 +373,13 @@ class LoginView(APIView):
         
         if not email_id and not number:
             return Response({'error': 'Either email_id or number is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate phone number if provided
+        if number:
+            is_valid, phone_result = validate_phone_number(number)
+            if not is_valid:
+                return Response({'error': phone_result}, status=status.HTTP_400_BAD_REQUEST)
+            number = phone_result  # Use cleaned phone number
         
         # Try to find user by email or phone
         try:
@@ -472,6 +567,11 @@ class GetInterestsView(APIView):
         if not lat or not long:
             return Response({'error': 'Location (lat, long) is required'}, status=status.HTTP_400_BAD_REQUEST)
         
+        # Validate coordinates
+        coords_valid, coords_error, lat_float, long_float = validate_coordinates(lat, long)
+        if not coords_valid:
+            return Response({'error': coords_error}, status=status.HTTP_400_BAD_REQUEST)
+        
         # Return all interests (location can be used for future filtering)
         interests = Interest.objects.all()
         serializer = InterestSerializer(interests, many=True)
@@ -493,8 +593,22 @@ class GuestLoginView(APIView):
         if not lat or not long:
             return Response({'error': 'Location (lat, long) is required'}, status=status.HTTP_400_BAD_REQUEST)
         
+        # Validate coordinates
+        coords_valid, coords_error, lat_float, long_float = validate_coordinates(lat, long)
+        if not coords_valid:
+            return Response({'error': coords_error}, status=status.HTTP_400_BAD_REQUEST)
+        
         # Get location details
         location_details = get_location_details(lat, long)
+        
+        # Validate pincode from location details
+        pincode_valid, pincode_error, cleaned_pincode = validate_pincode(location_details.get('pincode'))
+        if not pincode_valid:
+            return Response({'error': f"Invalid pincode from location: {pincode_error}"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Use cleaned pincode if valid
+        if cleaned_pincode:
+            location_details['pincode'] = cleaned_pincode
         
         # Generate unique guest userId
         guest_id = f"guest_{uuid.uuid4().hex[:8]}"
@@ -503,8 +617,8 @@ class GuestLoginView(APIView):
         user_data = {
             'userId': guest_id,
             'interests': interests,
-            'latitude': float(lat),
-            'longitude': float(long),
+            'latitude': lat_float,
+            'longitude': long_float,
             'pincode': location_details['pincode'],
             'city': location_details['city'],
             'state': location_details['state'],
@@ -630,19 +744,24 @@ class GetFeedView(APIView):
             if not lat or not long:
                 return Response({'error': 'Location (lat, long) is required'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Validate coordinates
+            coords_valid, coords_error, lat_float, long_float = validate_coordinates(lat, long)
+            if not coords_valid:
+                return Response({'error': coords_error}, status=status.HTTP_400_BAD_REQUEST)
+
             # Get user's interests
             user_interests = user.interests if user.interests else []
 
             # Generate feed based on user's interests
-            feed_data = self.generate_interest_based_feed(user_interests, lat, long, user.is_guest)
+            feed_data = self.generate_interest_based_feed(user_interests, lat_float, long_float, user.is_guest)
 
             return Response({
                 'feed': feed_data,
                 'user_interests': user_interests,
                 'is_guest': user.is_guest,
                 'location': {
-                    'lat': lat,
-                    'long': long,
+                    'lat': str(lat_float),
+                    'long': str(long_float),
                     'city': user.city,
                     'state': user.state
                 }
