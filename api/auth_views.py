@@ -96,8 +96,18 @@ def send_email_otp(email, otp):
     """
     Send OTP via email using Django SMTP backend
     REAL EMAIL SENDING for production
+    Returns: (success: bool, otp: str)
     """
     try:
+        print(f"\n{'='*60}")
+        print(f"📧 ATTEMPTING TO SEND OTP EMAIL")
+        print(f"{'='*60}")
+        print(f"To: {email}")
+        print(f"OTP: {otp}")
+        print(f"From: {settings.DEFAULT_FROM_EMAIL}")
+        print(f"SMTP: {settings.EMAIL_HOST}:{settings.EMAIL_PORT}")
+        print(f"{'='*60}\n")
+        
         send_mail(
             subject="Pinmate OTP Verification",
             message=f"Your Pinmate OTP is {otp}. It is valid for 5 minutes.",
@@ -105,11 +115,19 @@ def send_email_otp(email, otp):
             recipient_list=[email],
             fail_silently=False,
         )
-        print(f"[OTP EMAIL SENT] OTP sent to {email}")
-        return True
+        print(f"✅ [OTP EMAIL SENT] Successfully sent OTP to {email}")
+        print(f"📬 CHECK YOUR INBOX: {email}")
+        print(f"🔑 OTP CODE: {otp}\n")
+        return (True, otp)
     except Exception as e:
-        print(f"Error sending email OTP: {e}")
-        return False
+        print(f"❌ [EMAIL ERROR] Failed to send OTP email: {type(e).__name__}: {e}")
+        print(f"⚠️  Email not sent, but OTP is still valid: {otp}")
+        print(f"💡 For production: Configure EMAIL_HOST_PASSWORD in environment variables\n")
+        print(f"\n{'🔑 '*30}")
+        print(f"USE THIS OTP: {otp}")
+        print(f"{'🔑 '*30}\n")
+        # Don't fail the signup - OTP is still stored in database
+        return (False, otp)
 
 
 def send_otp_sms(phone_number, otp_code):
@@ -118,10 +136,18 @@ def send_otp_sms(phone_number, otp_code):
     For production, integrate with SMS service (Twilio, AWS SNS, etc.)
     """
     try:
+        print(f"\n{'='*60}")
+        print(f"📱 ATTEMPTING TO SEND OTP SMS")
+        print(f"{'='*60}")
+        print(f"To: {phone_number}")
+        print(f"OTP: {otp_code}")
+        print(f"{'='*60}\n")
+        
         # TODO: Implement actual SMS sending
         # For now, just print to console (development mode)
-        print(f"[OTP SMS] Sending OTP {otp_code} to {phone_number}")
+        print(f"[OTP SMS] OTP code for {phone_number}: {otp_code}")
         print(f"SMS would be sent: 'Your Pinmate verification code is: {otp_code}. Valid for 5 minutes.'")
+        print(f"⚠️  SMS sending not implemented - OTP printed above\n")
         return True
     except Exception as e:
         print(f"Error sending SMS OTP: {e}")
@@ -156,14 +182,16 @@ def handle_otp(identifier, is_email, app_mode, debug):
     otp = generate_otp()
     
     # Send OTP based on identifier type
+    email_sent = False
     if is_email:
-        send_email_otp(identifier, otp)
+        email_sent, otp = send_email_otp(identifier, otp)
     else:
         send_otp_sms(identifier, otp)
     
     return {
         "show_otp": True,
-        "otp": otp
+        "otp": otp,
+        "email_sent": email_sent
     }
 
 
@@ -394,11 +422,26 @@ class SignupView(APIView):
                 expires_at=expires_at
             )
             
-            return Response({
+            # For development/debugging: Print OTP to console
+            print(f"\n{'🔑 '*30}")
+            print(f"OTP FOR {identifier}: {otp_result['otp']}")
+            print(f"{'🔑 '*30}\n")
+            
+            # Check if email was actually sent
+            email_sent = otp_result.get('email_sent', True)
+            
+            response_data = {
                 'show_otp': otp_result["show_otp"],
                 'message': 'OTP sent successfully' if app_mode == 'prod' else 'OTP generated (staging mode)',
                 'identifier': identifier
-            }, status=status.HTTP_200_OK)
+            }
+            
+            # If email failed to send, include OTP in response for testing/debugging
+            if not email_sent:
+                response_data['otp'] = otp_result["otp"]
+                response_data['note'] = 'Email sending failed - OTP included in response. Configure EMAIL_HOST_PASSWORD.'
+            
+            return Response(response_data, status=status.HTTP_200_OK)
         
         # Debug mode: Skip OTP and create user immediately
         if not otp_result["show_otp"]:
