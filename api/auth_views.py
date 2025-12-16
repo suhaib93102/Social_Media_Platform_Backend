@@ -17,6 +17,8 @@ import random
 import re
 from datetime import timedelta
 from django.utils import timezone
+from django.core.mail import send_mail
+from django.conf import settings
 
 
 def validate_phone_number(phone_number):
@@ -90,17 +92,20 @@ def generate_otp():
     return str(random.randint(100000, 999999))
 
 
-def send_otp_email(email, otp_code):
+def send_email_otp(email, otp):
     """
-    Send OTP via email
-    For production, integrate with email service (SendGrid, AWS SES, etc.)
+    Send OTP via email using Django SMTP backend
+    REAL EMAIL SENDING for production
     """
     try:
-        # TODO: Implement actual email sending
-        # For now, just print to console (development mode)
-        print(f"[OTP EMAIL] Sending OTP {otp_code} to {email}")
-        print(f"Email would be sent with subject: 'Your Pinmate Verification Code'")
-        print(f"Body: 'Your verification code is: {otp_code}. Valid for 10 minutes.'")
+        send_mail(
+            subject="Pinmate OTP Verification",
+            message=f"Your Pinmate OTP is {otp}. It is valid for 5 minutes.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        print(f"[OTP EMAIL SENT] OTP sent to {email}")
         return True
     except Exception as e:
         print(f"Error sending email OTP: {e}")
@@ -116,11 +121,50 @@ def send_otp_sms(phone_number, otp_code):
         # TODO: Implement actual SMS sending
         # For now, just print to console (development mode)
         print(f"[OTP SMS] Sending OTP {otp_code} to {phone_number}")
-        print(f"SMS would be sent: 'Your Pinmate verification code is: {otp_code}. Valid for 10 minutes.'")
+        print(f"SMS would be sent: 'Your Pinmate verification code is: {otp_code}. Valid for 5 minutes.'")
         return True
     except Exception as e:
         print(f"Error sending SMS OTP: {e}")
         return False
+
+
+def handle_otp(identifier, is_email, app_mode, debug):
+    """
+    Core OTP logic handler following the header matrix:
+    - prod + debug=false: Real OTP, send email/SMS
+    - prod + debug=true: Skip OTP
+    - staging + debug=false: Default OTP "123456", no send
+    - staging + debug=true: Skip OTP
+    
+    Returns: {"show_otp": bool, "otp": str/None}
+    """
+    # DEBUG → Skip OTP
+    if debug:
+        return {
+            "show_otp": False,
+            "otp": None
+        }
+    
+    # STAGING → Default OTP (no email sent)
+    if app_mode == "staging":
+        return {
+            "show_otp": True,
+            "otp": "123456"
+        }
+    
+    # PROD → Real OTP
+    otp = generate_otp()
+    
+    # Send OTP based on identifier type
+    if is_email:
+        send_email_otp(identifier, otp)
+    else:
+        send_otp_sms(identifier, otp)
+    
+    return {
+        "show_otp": True,
+        "otp": otp
+    }
 
 
 def create_otp_record(identifier, otp_code):
@@ -251,7 +295,11 @@ class SignupView(APIView):
         lat = request.data.get('lat')
         long = request.data.get('long')
         interests = request.data.get('interests', [])
-        debug_param = request.data.get('debug', False)  # New debug parameter
+        
+        # Debug parameter - support both header and body
+        debug_header = request.headers.get('debug', 'false').lower() == 'true'
+        debug_body = request.data.get('debug', False)
+        debug = debug_header or bool(debug_body)
         
         # Validate input
         if not password:
@@ -325,12 +373,35 @@ class SignupView(APIView):
             device_id=device_id
         )
         
-        # Determine bypass according to exact table rules:
-        # - If header x-app-mode is 'release' AND request body debug==True => SKIP OTP (bypass)
-        # - Otherwise, OTP is required (even if request debug==True when x-app-mode=='debug')
-        bypass_debug_parameter = True if (app_mode == 'release' and bool(debug_param)) else False
+        # Handle OTP using the new core logic
+        otp_result = handle_otp(
+            identifier=identifier,
+            is_email=bool(email_id),
+            app_mode=app_mode,
+            debug=debug
+        )
         
-        if bypass_debug_parameter:
+        # If OTP is required, store it and return
+        if otp_result["otp"]:
+            # Delete old OTP codes for this identifier
+            OTPVerification.objects.filter(identifier=identifier).delete()
+            
+            # Create new OTP record with 5-minute expiry
+            expires_at = timezone.now() + timedelta(minutes=5)
+            OTPVerification.objects.create(
+                identifier=identifier,
+                otp_code=otp_result["otp"],
+                expires_at=expires_at
+            )
+            
+            return Response({
+                'show_otp': otp_result["show_otp"],
+                'message': 'OTP sent successfully' if app_mode == 'prod' else 'OTP generated (staging mode)',
+                'identifier': identifier
+            }, status=status.HTTP_200_OK)
+        
+        # Debug mode: Skip OTP and create user immediately
+        if not otp_result["show_otp"]:
             # Debug mode: check for existing guest user to upgrade
             guest_user = None
             if device_id:
@@ -422,27 +493,6 @@ class SignupView(APIView):
                     }, status=status.HTTP_201_CREATED)
                 
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Production mode or OTP required: Generate and send OTP
-        otp_code = generate_otp()
-        
-        # Delete old OTP codes for this identifier
-        OTPVerification.objects.filter(identifier=identifier).delete()
-        
-        # Create new OTP record
-        create_otp_record(identifier, otp_code)
-        
-        # Send OTP via email or SMS
-        if email_id:
-            send_otp_email(email_id, otp_code)
-        else:
-            send_otp_sms(number, otp_code)
-        
-        return Response({
-            'show_otp': True,
-            'message': get_otp_message(app_mode),
-            'identifier': identifier
-        }, status=status.HTTP_200_OK)
 
 
 class LoginView(APIView):
@@ -530,47 +580,49 @@ class VerifyOTPView(APIView):
         
         identifier = request.data.get('identifier')
         entered_otp = request.data.get('entered_otp')
-        debug_param = request.data.get('debug', False)
+        
+        # Debug parameter - support both header and body
+        debug_header = request.headers.get('debug', 'false').lower() == 'true'
+        debug_body = request.data.get('debug', False)
+        debug = debug_header or bool(debug_body)
         
         if not identifier:
             return Response({'error': 'Identifier is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Determine bypass according to exact table rules:
-        # bypass when header x-app-mode is 'release' AND request debug==True
-        bypass_debug_parameter = True if (app_mode == 'release' and bool(debug_param)) else False
-        
-        if bypass_debug_parameter:
-            # Skip OTP verification entirely and continue
+        # Handle OTP verification based on mode
+        if debug:
+            # DEBUG → Skip OTP verification entirely
             pass
+        elif app_mode == "staging":
+            # STAGING → Verify against default OTP "123456"
+            if not entered_otp:
+                return Response({'error': 'OTP is required'}, status=status.HTTP_400_BAD_REQUEST)
+            if str(entered_otp) != '123456':
+                return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            # Not bypassing - perform OTP verification
-            # Check environment debug mode (NODE_ENV=development + x-app-mode=debug)
-            debug_env = is_debug_mode(app_mode)
-            if debug_env:
-                # Debug env: require entered_otp and accept fixed 123456
-                if not entered_otp:
-                    return Response({'error': 'Identifier and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
-                if str(entered_otp) != '123456':
-                    return Response({'error': 'Invalid OTP (use 123456 in debug mode)'}, status=status.HTTP_400_BAD_REQUEST)
-            else:
-                # Production mode: require entered_otp and verify actual OTP
-                if not entered_otp:
-                    return Response({'error': 'Identifier and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
-                try:
-                    otp_record = OTPVerification.objects.filter(
-                        identifier=identifier,
-                        is_verified=False
-                    ).latest('created_at')
-                except OTPVerification.DoesNotExist:
-                    return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Check if OTP is expired
-                if otp_record.is_expired():
-                    return Response({'error': 'OTP has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Verify OTP
-                if otp_record.otp_code != str(entered_otp):
-                    return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+            # PROD → Verify actual OTP from database
+            if not entered_otp:
+                return Response({'error': 'OTP is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                otp_record = OTPVerification.objects.filter(
+                    identifier=identifier,
+                    is_verified=False
+                ).latest('created_at')
+            except OTPVerification.DoesNotExist:
+                return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if OTP is expired
+            if otp_record.is_expired():
+                return Response({'error': 'OTP has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verify OTP
+            if otp_record.otp_code != str(entered_otp):
+                return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Mark OTP as verified
+            otp_record.is_verified = True
+            otp_record.save()
         
         # Get pending signup data
         try:

@@ -18,10 +18,10 @@ def get_headers(request):
     if not device_id:
         return None, None, None, False, "x-device-id header is required"
     
-    # Get app_mode (debug or release) - default to release
-    app_mode = request.META.get('HTTP_X_APP_MODE', 'release').strip().lower()
-    if app_mode not in ['debug', 'release']:
-        return device_id, None, None, False, "x-app-mode must be 'debug' or 'release'"
+    # Get app_mode (prod or staging) - default to prod
+    app_mode = request.META.get('HTTP_X_APP_MODE', 'prod').strip().lower()
+    if app_mode not in ['prod', 'staging', 'debug', 'release']:
+        return device_id, None, None, False, "x-app-mode must be 'prod', 'staging', 'debug' or 'release'"
     
     # Get authorization token (optional)
     auth_header = request.META.get('HTTP_AUTHORIZATION', '').strip()
