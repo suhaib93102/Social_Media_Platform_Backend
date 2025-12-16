@@ -34,7 +34,7 @@ urlpatterns = [
     
     # Onboarding endpoints
     path('get-interests/', GetInterestsView.as_view(), name='get-interests'),
-    path('save-interests/', SaveInterestsView.as_view(), name='save-interests'),
+    path('user/save-interests/', SaveInterestsView.as_view(), name='save-interests'),
     path('login/guest/', GuestLoginView.as_view(), name='guest-login'),
     path('setup-profile/', SetupProfileView.as_view(), name='setup-profile'),
     path('get-feed/', GetFeedView.as_view(), name='get-feed'),

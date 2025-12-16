@@ -20,7 +20,6 @@ try:
     # Note: In Supabase, tables are typically created via SQL or migrations
     # For now, let's check if we can create tables using raw SQL
 
-    # Try to execute raw SQL to create tables
     sql_commands = [
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -105,15 +104,15 @@ try:
         try:
             print(f"Creating table {i}/7...")
             response = supabase.rpc('exec_sql', {'sql': sql}).execute()
-            print(f"✅ Table {i} created successfully")
+            print(f"Table {i} created successfully")
         except Exception as e:
-            print(f"❌ Failed to create table {i}: {str(e)}")
+            print(f"Failed to create table {i}: {str(e)}")
 
     print("\n🎉 All tables created successfully!")
     print("Now you can run Django migrations or use the API endpoints.")
 
 except Exception as e:
-    print(f"❌ Failed to connect to Supabase: {str(e)}")
+    print(f"Failed to connect to Supabase: {str(e)}")
     print("\n🔧 Alternative: Check your Supabase dashboard and create tables manually")
     print("Go to: https://supabase.com/dashboard/project/khudodonuubcqupqskxr/sql")
     print("And run the SQL commands from the sql_tables.sql file")

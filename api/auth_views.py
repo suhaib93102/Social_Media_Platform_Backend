@@ -678,9 +678,23 @@ class VerifyOTPView(APIView):
 
 class SaveInterestsView(APIView):
     """
-    POST /save-interests/
-    Save/update user interests
+    POST /user/save-interests/
+    Save/update user interests (replaces previous interests)
+    
+    Headers:
+    - Authorization: Bearer <access_token>
+    - Content-Type: application/json
+    - is_debug: true | false (optional)
+    
     Request: {"interests": ["tech", "sports", "entertainment"]}
+    
+    Validation:
+    - interests is required and must be a non-empty array
+    - Each interest ID must exist in the master interests table
+    - Max limit: 10 interests
+    - Duplicates are automatically removed
+    - Previous interests are replaced (not appended)
+    
     Requires authentication
     """
     authentication_classes = []
@@ -690,7 +704,7 @@ class SaveInterestsView(APIView):
         # Get token from Authorization header
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
         if not auth_header.startswith('Bearer '):
-            return Response({'error': 'No authentication token provided'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'message': 'Authentication credentials were not provided'}, status=status.HTTP_401_UNAUTHORIZED)
         
         token = auth_header.replace('Bearer ', '').strip()
         
@@ -699,27 +713,55 @@ class SaveInterestsView(APIView):
             access_token = AccessToken(token)
             user_id = access_token['user_id']
         except Exception:
-            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'message': 'Authentication credentials were not provided'}, status=status.HTTP_401_UNAUTHORIZED)
         
         # Get user
         try:
             user = UserProfile.objects.get(userId=user_id)
         except UserProfile.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'message': 'Authentication credentials were not provided'}, status=status.HTTP_401_UNAUTHORIZED)
         
         # Get interests from request
-        interests = request.data.get('interests', [])
+        interests = request.data.get('interests')
         
+        # Validation: interests is required
+        if interests is None:
+            return Response({'message': 'Invalid interests payload'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validation: must be an array
         if not isinstance(interests, list):
-            return Response({'error': 'Interests must be an array'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'message': 'Invalid interests payload'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Update user interests
-        user.interests = interests
+        # Validation: must be non-empty
+        if len(interests) == 0:
+            return Response({'message': 'Invalid interests payload'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Remove duplicates while preserving order
+        unique_interests = list(dict.fromkeys(interests))
+        
+        # Validation: max 10 interests
+        if len(unique_interests) > 10:
+            return Response({'message': 'Maximum 10 interests allowed'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate that all interest IDs exist in the master interests table
+        valid_interests = []
+        for interest_id in unique_interests:
+            try:
+                interest_obj = Interest.objects.get(interest_id=interest_id)
+                valid_interests.append({
+                    'id': interest_obj.interest_id,
+                    'name': interest_obj.name
+                })
+            except Interest.DoesNotExist:
+                return Response({'message': 'One or more interests are invalid'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Update user interests (replace, not append)
+        user.interests = unique_interests
         user.save()
         
         return Response({
-            'message': 'Interests added',
-            'interests': user.interests
+            'message': 'Interests updated successfully',
+            'interests': valid_interests
         }, status=status.HTTP_200_OK)
 
 
