@@ -217,7 +217,8 @@ class SignupView(APIView):
         "password": "...", 
         "lat": "...", 
         "long": "...", 
-        "interests": [...]
+        "interests": [...],
+        "debug": true/false (optional, overrides environment-based debug mode)
     }
     or
     {
@@ -225,8 +226,18 @@ class SignupView(APIView):
         "password": "...", 
         "lat": "...", 
         "long": "...", 
-        "interests": [...]
+        "interests": [...],
+        "debug": true/false (optional)
     }
+    
+    Debug Mode Behavior:
+    - If debug=true OR (NODE_ENV=development AND x-app-mode=debug):
+      * User created immediately without OTP verification
+      * No SMS/Email sent
+      * Returns tokens and user data
+    - Otherwise:
+      * Sends real OTP via SMS/Email
+      * Requires OTP verification via /auth/verify-otp/
     """
     def post(self, request):
         # Get and validate headers
@@ -240,6 +251,7 @@ class SignupView(APIView):
         lat = request.data.get('lat')
         long = request.data.get('long')
         interests = request.data.get('interests', [])
+        debug_param = request.data.get('debug', False)  # New debug parameter
         
         # Validate input
         if not password:
@@ -313,8 +325,8 @@ class SignupView(APIView):
             device_id=device_id
         )
         
-        # Check if debug mode
-        debug = is_debug_mode(app_mode)
+        # Check if debug mode (environment-based OR debug parameter)
+        debug = is_debug_mode(app_mode) or debug_param
         
         if debug:
             # Debug mode: check for existing guest user to upgrade
@@ -886,7 +898,22 @@ class SetupProfileView(APIView):
     """
     POST /setup-profile/
     Update user profile with additional details
-    Request: {"name": "...", "bio": "...", "gender": "...", "age": 25, "image_url": "...", "additional_pincodes": [...], "address_details": "..."}
+    
+    Request: {
+        "name": "...", 
+        "bio": "...", 
+        "gender": "...", 
+        "age": 25, 
+        "image_url": "...", 
+        "additional_pincodes": [...], 
+        "address_details": "...",
+        "pincode": "...",
+        "city": "...",
+        "state": "...",
+        "country": "..."
+    }
+    
+    Returns complete profile with address information
     Requires authentication
     """
     authentication_classes = []  # Disable DRF default authentication
@@ -931,8 +958,35 @@ class SetupProfileView(APIView):
             if 'address_details' in request.data:
                 user.address_details = request.data['address_details']
             
+            # Update address/location fields if provided
+            if 'pincode' in request.data:
+                user.pincode = request.data['pincode']
+            if 'city' in request.data:
+                user.city = request.data['city']
+            if 'state' in request.data:
+                user.state = request.data['state']
+            if 'country' in request.data:
+                user.country = request.data['country']
+            
             user.save()
-            return Response({'message': 'Profile Details saved successfully.'}, status=status.HTTP_200_OK)
+            
+            return Response({
+                'message': 'Profile details saved successfully',
+                'profile': {
+                    'name': user.name,
+                    'bio': user.bio,
+                    'gender': user.gender,
+                    'age': user.age,
+                    'image_url': user.profilePhoto or '',
+                    'address_details': user.address_details,
+                    'address': {
+                        'pincode': user.pincode or '',
+                        'city': user.city or '',
+                        'state': user.state or '',
+                        'country': user.country or ''
+                    }
+                }
+            }, status=status.HTTP_200_OK)
         
         except Exception as e:
             import traceback
