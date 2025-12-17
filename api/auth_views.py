@@ -383,8 +383,9 @@ class SignupView(APIView):
         if cleaned_pincode:
             location_details['pincode'] = cleaned_pincode
         
-        # Generate userId from email or phone
+        # Generate userId from email or phone (normalize emails)
         if email_id:
+            email_id = email_id.strip().lower()
             user_id = email_id.split('@')[0]
             identifier = email_id
         else:
@@ -651,6 +652,15 @@ class VerifyOTPView(APIView):
         
         if not identifier:
             return Response({'error': 'Identifier is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Normalize and validate identifier (email or phone)
+        if '@' in identifier:
+            identifier = identifier.strip().lower()
+        else:
+            is_valid, phone_result = validate_phone_number(identifier)
+            if not is_valid:
+                return Response({'error': phone_result}, status=status.HTTP_400_BAD_REQUEST)
+            identifier = phone_result
         
         # Handle OTP verification based on mode
         if debug:
@@ -667,12 +677,11 @@ class VerifyOTPView(APIView):
             if not entered_otp:
                 return Response({'error': 'OTP is required'}, status=status.HTTP_400_BAD_REQUEST)
             
-            try:
-                otp_record = OTPVerification.objects.filter(
-                    identifier=identifier,
-                    is_verified=False
-                ).latest('created_at')
-            except OTPVerification.DoesNotExist:
+            otp_record = OTPVerification.objects.filter(
+                identifier=identifier,
+                is_verified=False
+            ).order_by('-created_at').first()
+            if not otp_record:
                 return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
             
             # Check if OTP is expired
@@ -748,12 +757,11 @@ class VerifyOTPView(APIView):
         
         # Mark OTP as verified (only in production mode)
         if not debug:
-            try:
-                otp_record = OTPVerification.objects.get(identifier=identifier)
-                otp_record.is_verified = True
-                otp_record.save()
-            except OTPVerification.DoesNotExist:
-                pass
+            # Use filter + order_by to avoid MultipleObjectsReturned and pick the latest unverified OTP
+            otp_to_mark = OTPVerification.objects.filter(identifier=identifier, is_verified=False).order_by('-created_at').first()
+            if otp_to_mark:
+                otp_to_mark.is_verified = True
+                otp_to_mark.save()
         
         # Delete pending signup
         pending_signup.delete()
@@ -800,7 +808,15 @@ class ResendOTPView(APIView):
         if not identifier:
             return Response({'error': 'Identifier is required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Normalize and validate identifier (email or phone)
         is_email = '@' in identifier
+        if is_email:
+            identifier = identifier.strip().lower()
+        else:
+            is_valid, phone_result = validate_phone_number(identifier)
+            if not is_valid:
+                return Response({'error': phone_result}, status=status.HTTP_400_BAD_REQUEST)
+            identifier = phone_result  # use cleaned numeric phone
 
         # Respect debug override if present
         debug_header = request.headers.get('debug', 'false').lower() == 'true'
@@ -815,6 +831,8 @@ class ResendOTPView(APIView):
             expires_at = timezone.now() + timedelta(minutes=5)
             OTPVerification.objects.create(identifier=identifier, otp_code=otp_result['otp'], expires_at=expires_at)
 
+        email_sent = otp_result.get('email_sent', True)
+
         response = {
             'show_otp': otp_result.get('show_otp', True),
             'message': 'OTP resent' if not debug else 'Debug mode - no OTP sent',
@@ -824,6 +842,11 @@ class ResendOTPView(APIView):
         # For staging or debug, include OTP for QA convenience
         if app_mode == 'staging' or debug:
             response['otp'] = otp_result.get('otp')
+
+        # If email failed to send in production, include OTP in response for testing/debugging
+        if not email_sent and not (app_mode == 'staging' or debug):
+            response['otp'] = otp_result.get('otp')
+            response['note'] = 'Email sending failed - OTP included in response. Configure EMAIL_HOST_PASSWORD.'
 
         return Response(response, status=status.HTTP_200_OK)
 
@@ -841,6 +864,16 @@ class DebugGetOTPView(APIView):
         identifier = request.data.get('identifier')
         if not identifier:
             return Response({'error': 'Identifier is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Normalize and validate identifier (email or phone)
+        is_email = '@' in identifier
+        if is_email:
+            identifier = identifier.strip().lower()
+        else:
+            is_valid, phone_result = validate_phone_number(identifier)
+            if not is_valid:
+                return Response({'error': phone_result}, status=status.HTTP_400_BAD_REQUEST)
+            identifier = phone_result  # use cleaned numeric phone
 
         allowed = False
         if getattr(settings, 'DEBUG', False):
