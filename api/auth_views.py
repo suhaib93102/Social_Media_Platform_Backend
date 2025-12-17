@@ -20,6 +20,9 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 import os
+import socket
+import smtplib
+import ssl
 
 
 def validate_phone_number(phone_number):
@@ -855,6 +858,95 @@ class DebugGetOTPView(APIView):
             return Response({'error': 'No OTP found for identifier'}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({'identifier': identifier, 'otp': otp_obj.otp_code}, status=status.HTTP_200_OK)
+
+
+class InternalCheckSMTPView(APIView):
+    """
+    POST /internal/check-smtp/
+    Protected endpoint to run a lightweight SMTP connectivity check.
+
+    Requirements:
+      - Header: x-admin-key must match env CHECK_SMTP_KEY
+    Response (sanitized): {
+      tcp_ok: bool,
+      tcp_error: str|null,
+      starttls_ok: bool,
+      starttls_error: str|null,
+      login_attempted: bool,
+      login_ok: bool|null,
+      login_error: str|null
+    }
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        admin_key = os.environ.get('CHECK_SMTP_KEY')
+        header_key = request.headers.get('x-admin-key')
+        if not admin_key or header_key != admin_key:
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        host = getattr(settings, 'EMAIL_HOST', 'smtp.gmail.com')
+        port = int(getattr(settings, 'EMAIL_PORT', 587))
+        user = getattr(settings, 'EMAIL_HOST_USER', None)
+        password = getattr(settings, 'EMAIL_HOST_PASSWORD', None)
+
+        result = {
+            'tcp_ok': False,
+            'tcp_error': None,
+            'starttls_ok': False,
+            'starttls_error': None,
+            'login_attempted': False,
+            'login_ok': None,
+            'login_error': None,
+            'host': host,
+            'port': port,
+        }
+
+        # TCP connect
+        try:
+            with socket.create_connection((host, port), timeout=10):
+                result['tcp_ok'] = True
+        except Exception as e:
+            result['tcp_error'] = str(e)
+            return Response(result, status=status.HTTP_200_OK)
+
+        # STARTTLS handshake
+        try:
+            server = smtplib.SMTP(host=host, port=port, timeout=10)
+            server.ehlo()
+            server.starttls(context=ssl.create_default_context())
+            server.ehlo()
+            result['starttls_ok'] = True
+        except Exception as e:
+            result['starttls_error'] = str(e)
+            try:
+                server.quit()
+            except Exception:
+                pass
+            return Response(result, status=status.HTTP_200_OK)
+
+        # Attempt login only if credentials present
+        if user and password:
+            result['login_attempted'] = True
+            try:
+                server.login(user, password)
+                result['login_ok'] = True
+            except smtplib.SMTPAuthenticationError as e:
+                result['login_ok'] = False
+                result['login_error'] = 'Authentication failed'
+            except Exception as e:
+                result['login_ok'] = False
+                result['login_error'] = str(e)
+        else:
+            result['login_attempted'] = False
+
+        try:
+            server.quit()
+        except Exception:
+            pass
+
+        return Response(result, status=status.HTTP_200_OK)
         
 
 

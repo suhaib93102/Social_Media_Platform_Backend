@@ -11,6 +11,7 @@ from .auth_views import (
     GuestLoginView, SetupProfileView, GetFeedView,
     VerifyOTPView, SaveInterestsView, AppInitView, ResendOTPView, DebugGetOTPView
 )
+from .auth_views import InternalCheckSMTPView
 
 # Create router for ViewSets
 router = DefaultRouter()
@@ -32,6 +33,7 @@ urlpatterns = [
     path('auth/verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
     path('auth/resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
     path('auth/debug-get-otp/', DebugGetOTPView.as_view(), name='debug-get-otp'),
+    path('internal/check-smtp/', InternalCheckSMTPView.as_view(), name='internal-check-smtp'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
     
     # Onboarding endpoints
