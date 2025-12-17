@@ -17,7 +17,7 @@ TS=$(date +%s)
 # ============================================================================
 echo "1️⃣  APP INITIALIZATION"
 echo "----------------------------------------------------------------------"
-curl -s -X GET "$BASE/app-init/" \
+curl -s -X POST "$BASE/app-init/" \
   -H "Content-Type: application/json" \
   -H "x-device-id: test-device-$TS" \
   -H "x-app-mode: prod" | jq . || echo "Failed"
@@ -25,17 +25,29 @@ echo ""
 echo ""
 
 # ============================================================================
-# 2. GET INTERESTS
+# 2. GET INTERESTS (Requires Auth Token)
 # ============================================================================
 echo "2️⃣  GET INTERESTS"
 echo "----------------------------------------------------------------------"
-INTERESTS=$(curl -s -X GET "$BASE/get-interests/" \
+# First get a token via guest login
+GUEST_FOR_INTERESTS=$(curl -s -X POST "$BASE/login/guest/" \
   -H "Content-Type: application/json" \
-  -H "x-device-id: test-device-$TS" \
-  -H "x-app-mode: prod")
+  -H "x-device-id: interests-guest-$TS" \
+  -H "x-app-mode: prod" \
+  -d '{"lat": "28.6139", "long": "77.2090"}')
+
+GUEST_TOKEN=$(echo "$GUEST_FOR_INTERESTS" | jq -r '.tokens.access // empty')
+
+INTERESTS=$(curl -s -X POST "$BASE/get-interests/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $GUEST_TOKEN" \
+  -H "x-device-id: interests-get-$TS" \
+  -H "x-app-mode: prod" \
+  -d '{"lat": "28.6139", "long": "77.2090"}')
+
 echo "$INTERESTS" | jq . || echo "$INTERESTS"
-INTEREST_ID=$(echo "$INTERESTS" | jq -r '.interests[0].id // 1')
-echo "Using Interest ID: $INTEREST_ID"
+INTEREST_ID=$(echo "$INTERESTS" | jq -r '.interests[0].id // "technology"')
+echo "Using Interest ID (string): $INTEREST_ID"
 echo ""
 echo ""
 
@@ -72,7 +84,7 @@ SIGNUP1=$(curl -s -X POST "$BASE/auth/signup/" \
     "password": "Pass123!",
     "lat": "28.6139",
     "long": "77.2090",
-    "interests": ['"$INTEREST_ID"'],
+    "interests": ["technology", "sports"],
     "debug": false
   }')
 echo "$SIGNUP1" | jq . || echo "$SIGNUP1"
@@ -112,7 +124,7 @@ SIGNUP2=$(curl -s -X POST "$BASE/auth/signup/" \
     "password": "Pass123!",
     "lat": "28.6139",
     "long": "77.2090",
-    "interests": ['"$INTEREST_ID"'],
+    "interests": ["technology", "art"],
     "debug": true
   }')
 echo "$SIGNUP2" | jq . || echo "$SIGNUP2"
@@ -135,7 +147,7 @@ SIGNUP3=$(curl -s -X POST "$BASE/auth/signup/" \
     "password": "Pass123!",
     "lat": "28.6139",
     "long": "77.2090",
-    "interests": ['"$INTEREST_ID"'],
+    "interests": ["music", "food"],
     "debug": false
   }')
 echo "$SIGNUP3" | jq . || echo "$SIGNUP3"
@@ -169,7 +181,7 @@ SIGNUP4=$(curl -s -X POST "$BASE/auth/signup/" \
     "password": "Pass123!",
     "lat": "28.6139",
     "long": "77.2090",
-    "interests": ['"$INTEREST_ID"'],
+    "interests": ["travel", "photography"],
     "debug": true
   }')
 echo "$SIGNUP4" | jq . || echo "$SIGNUP4"
@@ -209,7 +221,7 @@ if [ ! -z "$ACCESS_TOKEN" ]; then
     -H "x-device-id: interests-$TS" \
     -H "x-app-mode: prod" \
     -d '{
-      "interests": ['"$INTEREST_ID"']
+      "interests": ["technology", "sports", "music"]
     }' | jq . || echo "Failed"
   echo ""
   echo ""

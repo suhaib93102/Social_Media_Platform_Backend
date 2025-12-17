@@ -98,35 +98,51 @@ def send_email_otp(email, otp):
     REAL EMAIL SENDING for production
     Returns: (success: bool, otp: str)
     """
+    # Quick config check — if SMTP credentials aren't set, skip trying to send
+    if not getattr(settings, 'EMAIL_HOST_PASSWORD', None) or settings.EMAIL_HOST_PASSWORD == 'your_gmail_app_password_here':
+        print("❌ [EMAIL CONFIG] EMAIL_HOST_PASSWORD not set or invalid. Skipping send_mail.")
+        print(f"⚠️  Email not sent, but OTP is still valid: {otp}")
+        # Provide OTP in response for safe testing (production should not expose OTP)
+        return (False, otp)
+
+    # Send email asynchronously to avoid blocking gunicorn worker and possible timeouts
     try:
         print(f"\n{'='*60}")
-        print(f"📧 ATTEMPTING TO SEND OTP EMAIL")
+        print(f"📧 SCHEDULING OTP EMAIL (background send)")
         print(f"{'='*60}")
         print(f"To: {email}")
         print(f"OTP: {otp}")
         print(f"From: {settings.DEFAULT_FROM_EMAIL}")
         print(f"SMTP: {settings.EMAIL_HOST}:{settings.EMAIL_PORT}")
         print(f"{'='*60}\n")
-        
-        send_mail(
-            subject="Pinmate OTP Verification",
-            message=f"Your Pinmate OTP is {otp}. It is valid for 5 minutes.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-        print(f"✅ [OTP EMAIL SENT] Successfully sent OTP to {email}")
-        print(f"📬 CHECK YOUR INBOX: {email}")
-        print(f"🔑 OTP CODE: {otp}\n")
+
+        import threading
+
+        def _send():
+            try:
+                send_mail(
+                    subject="Pinmate OTP Verification",
+                    message=f"Your Pinmate OTP is {otp}. It is valid for 5 minutes.",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
+                print(f"✅ [OTP EMAIL SENT] Successfully sent OTP to {email}")
+                print(f"📬 CHECK YOUR INBOX: {email}")
+                print(f"🔑 OTP CODE: {otp}\n")
+            except Exception as e:
+                print(f"❌ [EMAIL ERROR - BACKGROUND] Failed to send OTP email: {type(e).__name__}: {e}")
+                print("⚠️  Email sending failed in background; OTP remains valid in DB.")
+
+        t = threading.Thread(target=_send, daemon=True)
+        t.start()
+
+        # We scheduled the send; return True to indicate email send was initiated
         return (True, otp)
+
     except Exception as e:
-        print(f"❌ [EMAIL ERROR] Failed to send OTP email: {type(e).__name__}: {e}")
-        print(f"⚠️  Email not sent, but OTP is still valid: {otp}")
-        print(f"💡 For production: Configure EMAIL_HOST_PASSWORD in environment variables\n")
-        print(f"\n{'🔑 '*30}")
-        print(f"USE THIS OTP: {otp}")
-        print(f"{'🔑 '*30}\n")
-        # Don't fail the signup - OTP is still stored in database
+        # If scheduling itself fails, fallback safely
+        print(f"❌ [EMAIL SCHEDULING ERROR] {type(e).__name__}: {e}")
         return (False, otp)
 
 
