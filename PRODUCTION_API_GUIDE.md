@@ -304,11 +304,33 @@ Each request includes automated tests that:
 
 ## 🐛 Troubleshooting
 
-### "Empty Response" for PROD OTP:
-Add to Render environment variables:
+### "Empty Response" for PROD OTP: (SMTP connectivity)
+**Cause:** `EMAIL_HOST_PASSWORD` not configured on Render OR outbound SMTP blocked by host.
+
+**Action:**
+1. Add to Render environment variables (Settings → Environment → Variables):
 ```
-EMAIL_HOST_PASSWORD=your_gmail_app_password_here
+EMAIL_HOST_PASSWORD=your_16_char_gmail_app_password_here
+EMAIL_HOST_USER=your_sender@gmail.com
+DEFAULT_FROM_EMAIL=your_sender@gmail.com
 ```
+
+2. Verify outbound connectivity to smtp.gmail.com:587 from your Render instance (use the Render Shell or web console):
+```bash
+# TCP connection test
+nc -vz smtp.gmail.com 587
+# TLS handshake test
+openssl s_client -starttls smtp -crlf -connect smtp.gmail.com:587
+```
+
+3. Use the Django management command to test SMTP from the app (added):
+```bash
+python manage.py check_smtp          # tests TCP connect + STARTTLS + (optionally) login
+python manage.py check_smtp --send-test --recipient you@example.com  # sends a test email if credentials are set
+```
+
+4. If Render blocks SMTP outbound on port 587, use a transactional provider (SendGrid/Mailgun/Postmark) and the provider's API (recommended) or open a support ticket with Render to allow outbound SMTP.
+
 
 ### "Method Not Allowed":
 Check if endpoint requires POST instead of GET
