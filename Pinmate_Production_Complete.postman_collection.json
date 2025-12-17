@@ -1,0 +1,382 @@
+{
+  "info": {
+    "name": "Pinmate Production API - Complete Collection",
+    "description": "Complete API collection for testing all onboarding and auth endpoints on Render production server",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Guest Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-mode",
+            "value": "prod"
+          },
+          {
+            "key": "x-device-id",
+            "value": "{{device_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"lat\": \"28.6139\",\n  \"long\": \"77.2090\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/login/guest/",
+          "host": ["{{base_url}}"],
+          "path": ["login", "guest", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Guest user created\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.tokens).to.exist;",
+              "    pm.collectionVariables.set(\"guest_access_token\", jsonData.tokens.access);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Signup - PROD (debug=true)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-mode",
+            "value": "prod"
+          },
+          {
+            "key": "x-device-id",
+            "value": "{{device_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email_id\": \"testuser_{{$timestamp}}@example.com\",\n  \"password\": \"Pass123!\",\n  \"lat\": \"28.6139\",\n  \"long\": \"77.2090\",\n  \"interests\": [1],\n  \"debug\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/signup/",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "signup", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"User created (debug mode)\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.show_otp).to.eql(false);",
+              "    pm.expect(jsonData.tokens).to.exist;",
+              "    pm.collectionVariables.set(\"user_access_token\", jsonData.tokens.access);",
+              "    pm.collectionVariables.set(\"user_id\", jsonData.user.userId);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Signup - STAGING (OTP=123456)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-mode",
+            "value": "staging"
+          },
+          {
+            "key": "x-device-id",
+            "value": "{{device_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email_id\": \"staging_{{$timestamp}}@example.com\",\n  \"password\": \"Pass123!\",\n  \"lat\": \"28.6139\",\n  \"long\": \"77.2090\",\n  \"interests\": [1],\n  \"debug\": false\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/signup/",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "signup", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"OTP required (staging mode)\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.show_otp).to.eql(true);",
+              "    pm.collectionVariables.set(\"staging_identifier\", jsonData.identifier);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Verify OTP - STAGING",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-mode",
+            "value": "staging"
+          },
+          {
+            "key": "x-device-id",
+            "value": "{{device_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"{{staging_identifier}}\",\n  \"entered_otp\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/verify-otp/",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "verify-otp", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"User created after OTP\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.tokens).to.exist;",
+              "    pm.collectionVariables.set(\"staging_access_token\", jsonData.tokens.access);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Setup Profile",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staging_access_token}}"
+          },
+          {
+            "key": "x-app-mode",
+            "value": "prod"
+          },
+          {
+            "key": "x-device-id",
+            "value": "{{device_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Test User\",\n  \"bio\": \"Testing from Postman\",\n  \"gender\": \"male\",\n  \"age\": 25,\n  \"lat\": \"28.6139\",\n  \"long\": \"77.2090\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/setup-profile/",
+          "host": ["{{base_url}}"],
+          "path": ["setup-profile", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Profile saved\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.profile).to.exist;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-mode",
+            "value": "prod"
+          },
+          {
+            "key": "x-device-id",
+            "value": "{{device_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email_id\": \"staging_1765971518@example.com\",\n  \"password\": \"Pass123!\",\n  \"lat\": \"28.6139\",\n  \"long\": \"77.2090\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/login/",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "login", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Login successful\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.tokens).to.exist;",
+              "    pm.collectionVariables.set(\"login_access_token\", jsonData.tokens.access);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Get Feed",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{login_access_token}}"
+          },
+          {
+            "key": "x-app-mode",
+            "value": "prod"
+          },
+          {
+            "key": "x-device-id",
+            "value": "{{device_id}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/get-feed/",
+          "host": ["{{base_url}}"],
+          "path": ["get-feed", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://social-media-platform-backend-4oz4.onrender.com",
+      "type": "string"
+    },
+    {
+      "key": "device_id",
+      "value": "postman-test-device",
+      "type": "string"
+    },
+    {
+      "key": "guest_access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "staging_identifier",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "staging_access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "login_access_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
