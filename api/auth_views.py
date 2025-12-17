@@ -19,6 +19,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
+import os
 
 
 def validate_phone_number(phone_number):
@@ -776,41 +777,85 @@ class VerifyOTPView(APIView):
                 'country': user.country
             }
         }, status=status.HTTP_200_OK)
+
+
+class ResendOTPView(APIView):
+    """
+    POST /auth/resend-otp/
+    Body: {"identifier": "email_or_phone"}
+
+    Behavior:
+    - Creates and stores a new OTP for the identifier and schedules delivery
+    - Returns show_otp and message; does NOT return OTP in production
+    """
+    def post(self, request):
+        device_id, app_mode, _, headers_valid, headers_error = get_headers(request)
+        if not headers_valid:
+            return Response({'error': headers_error}, status=status.HTTP_400_BAD_REQUEST)
+
+        identifier = request.data.get('identifier')
+        if not identifier:
+            return Response({'error': 'Identifier is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_email = '@' in identifier
+
+        # Respect debug override if present
+        debug_header = request.headers.get('debug', 'false').lower() == 'true'
+        debug_body = request.data.get('debug', False)
+        debug = debug_header or bool(debug_body)
+
+        otp_result = handle_otp(identifier=identifier, is_email=is_email, app_mode=app_mode, debug=debug)
+
+        if otp_result.get('otp'):
+            # Store new OTP in DB (5-minute expiry)
+            OTPVerification.objects.filter(identifier=identifier).delete()
+            expires_at = timezone.now() + timedelta(minutes=5)
+            OTPVerification.objects.create(identifier=identifier, otp_code=otp_result['otp'], expires_at=expires_at)
+
+        response = {
+            'show_otp': otp_result.get('show_otp', True),
+            'message': 'OTP resent' if not debug else 'Debug mode - no OTP sent',
+            'identifier': identifier
+        }
+
+        # For staging or debug, include OTP for QA convenience
+        if app_mode == 'staging' or debug:
+            response['otp'] = otp_result.get('otp')
+
+        return Response(response, status=status.HTTP_200_OK)
+
+
+class DebugGetOTPView(APIView):
+    """
+    POST /auth/debug-get-otp/
+    Body: {"identifier": "..."}
+    Returns the latest OTP for identifier only if:
+      - settings.DEBUG == True OR
+      - Header 'x-debug-key' matches env DEBUG_API_KEY
+    NOTE: This endpoint is for QA only and should NOT be enabled in production without secret.
+    """
+    def post(self, request):
+        identifier = request.data.get('identifier')
+        if not identifier:
+            return Response({'error': 'Identifier is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed = False
+        if getattr(settings, 'DEBUG', False):
+            allowed = True
+        else:
+            debug_key = request.headers.get('x-debug-key')
+            if debug_key and debug_key == os.environ.get('DEBUG_API_KEY'):
+                allowed = True
+
+        if not allowed:
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        otp_obj = OTPVerification.objects.filter(identifier=identifier).order_by('-created_at').first()
+        if not otp_obj:
+            return Response({'error': 'No OTP found for identifier'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({'identifier': identifier, 'otp': otp_obj.otp_code}, status=status.HTTP_200_OK)
         
-        serializer = UserProfileSerializer(data=user_data)
-        if serializer.is_valid():
-            user = serializer.save()
-            
-            # Mark OTP as verified
-            otp_record.is_verified = True
-            otp_record.save()
-            
-            # Delete pending signup
-            pending_signup.delete()
-            
-            # Generate JWT tokens
-            refresh = RefreshToken.for_user(user)
-            
-            return Response({
-                'message': 'User created successfully',
-                'user': {
-                    'userId': user.userId,
-                    'name': user.name,
-                    'email': user.email
-                },
-                'tokens': {
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token)
-                },
-                'location_details': {
-                    'pincode': user.pincode,
-                    'city': user.city,
-                    'state': user.state,
-                    'country': user.country
-                }
-            }, status=status.HTTP_201_CREATED)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class SaveInterestsView(APIView):
