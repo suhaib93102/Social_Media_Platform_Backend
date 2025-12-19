@@ -80,6 +80,7 @@ class OTPVerification(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     is_verified = models.BooleanField(default=False)
+    session_token = models.TextField(null=True, blank=True)  # Sendmator session token
     
     class Meta:
         db_table = 'otp_verifications'

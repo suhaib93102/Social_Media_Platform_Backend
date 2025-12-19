@@ -11,6 +11,7 @@ from .headers_util import (
     get_otp_for_debug_mode, verify_otp_in_debug_or_production,
     get_otp_message
 )
+from .sendmator_service import SendmatorService
 import uuid
 import requests
 import random
@@ -176,52 +177,80 @@ def send_otp_sms(phone_number, otp_code):
 
 def handle_otp(identifier, is_email, app_mode, debug):
     """
-    Core OTP logic handler following the header matrix:
-    - prod + debug=false: Real OTP, send email/SMS
+    Core OTP logic handler using Sendmator:
+    - prod + debug=false: Sendmator real OTP
     - prod + debug=true: Skip OTP
-    - staging + debug=false: Default OTP "123456", no send
+    - staging + debug=false: Sendmator sandbox mode
     - staging + debug=true: Skip OTP
     
-    Returns: {"show_otp": bool, "otp": str/None}
+    Returns: {
+        "show_otp": bool, 
+        "otp": str/None, 
+        "session_token": str/None,
+        "sendmator_used": bool
+    }
     """
     # DEBUG → Skip OTP
     if debug:
         return {
             "show_otp": False,
-            "otp": None
+            "otp": None,
+            "session_token": None,
+            "sendmator_used": False
         }
     
-    # STAGING → Default OTP (no email sent)
-    if app_mode == "staging":
+    # Determine if we should use sandbox mode
+    sandbox_mode = (app_mode == "staging")
+    
+    # Use Sendmator for OTP sending
+    if is_email:
+        success, session_token, otp, error = SendmatorService.send_otp_email(
+            identifier, 
+            sandbox_mode=sandbox_mode
+        )
+    else:
+        success, session_token, otp, error = SendmatorService.send_otp_sms(
+            identifier, 
+            sandbox_mode=sandbox_mode
+        )
+    
+    if success:
         return {
             "show_otp": True,
-            "otp": "123456"
+            "otp": otp if sandbox_mode else None,  # Only expose OTP in sandbox mode
+            "session_token": session_token,
+            "sendmator_used": True,
+            "error": None
         }
-    
-    # PROD → Real OTP
-    otp = generate_otp()
-    
-    # Send OTP based on identifier type
-    email_sent = False
-    if is_email:
-        email_sent, otp = send_email_otp(identifier, otp)
     else:
-        send_otp_sms(identifier, otp)
-    
-    return {
-        "show_otp": True,
-        "otp": otp,
-        "email_sent": email_sent
-    }
+        # Fallback to old method if Sendmator fails
+        print(f"⚠️ Sendmator failed, using fallback method: {error}")
+        otp = generate_otp()
+        email_sent = False
+        
+        if is_email:
+            email_sent, otp = send_email_otp(identifier, otp)
+        else:
+            send_otp_sms(identifier, otp)
+        
+        return {
+            "show_otp": True,
+            "otp": otp,
+            "session_token": None,
+            "sendmator_used": False,
+            "email_sent": email_sent,
+            "error": error
+        }
 
 
-def create_otp_record(identifier, otp_code):
+def create_otp_record(identifier, otp_code, session_token=None):
     """Create OTP verification record"""
     expires_at = timezone.now() + timedelta(minutes=10)
     OTPVerification.objects.create(
         identifier=identifier,
         otp_code=otp_code,
-        expires_at=expires_at
+        expires_at=expires_at,
+        session_token=session_token
     )
 
 
@@ -431,34 +460,50 @@ class SignupView(APIView):
         )
         
         # If OTP is required, store it and return
-        if otp_result["otp"]:
+        if otp_result.get("session_token") or otp_result.get("otp"):
             # Delete old OTP codes for this identifier
             OTPVerification.objects.filter(identifier=identifier).delete()
             
-            # Create new OTP record with 5-minute expiry
-            expires_at = timezone.now() + timedelta(minutes=5)
+            # Create new OTP record with 10-minute expiry (Sendmator default)
+            expires_at = timezone.now() + timedelta(minutes=10)
+            
+            # Store OTP code (from sandbox) or use placeholder for Sendmator verification
+            otp_code = otp_result.get("otp") or "SENDMATOR"
+            session_token = otp_result.get("session_token")
+            
             OTPVerification.objects.create(
                 identifier=identifier,
-                otp_code=otp_result["otp"],
-                expires_at=expires_at
+                otp_code=otp_code,
+                expires_at=expires_at,
+                session_token=session_token
             )
             
             # For development/debugging: Print OTP to console
-            print(f"\n{'🔑 '*30}")
-            print(f"OTP FOR {identifier}: {otp_result['otp']}")
-            print(f"{'🔑 '*30}\n")
+            if otp_result.get("otp"):
+                print(f"\n{'🔑 '*30}")
+                print(f"OTP FOR {identifier}: {otp_result['otp']}")
+                print(f"{'🔑 '*30}\n")
             
-            # Check if email was actually sent
-            email_sent = otp_result.get('email_sent', True)
+            # Check if using Sendmator
+            sendmator_used = otp_result.get('sendmator_used', False)
             
             response_data = {
                 'show_otp': otp_result["show_otp"],
-                'message': 'OTP sent successfully' if app_mode == 'prod' else 'OTP generated (staging mode)',
-                'identifier': identifier
+                'message': 'OTP sent via Sendmator' if sendmator_used else 'OTP sent successfully',
+                'identifier': identifier,
+                'sendmator': sendmator_used
             }
             
-            # If email failed to send, include OTP in response for testing/debugging
-            if not email_sent:
+            # Include OTP in sandbox/staging mode or if email failed
+            if otp_result.get("otp"):
+                response_data['otp'] = otp_result['otp']
+            
+            # If Sendmator failed or email failed to send
+            if otp_result.get('error'):
+                response_data['note'] = f"Fallback mode: {otp_result['error']}"
+            
+            email_sent = otp_result.get('email_sent', True)
+            if not email_sent and not sendmator_used:
                 response_data['otp'] = otp_result["otp"]
                 response_data['note'] = 'Email sending failed - OTP included in response. Configure EMAIL_HOST_PASSWORD.'
             
@@ -666,14 +711,8 @@ class VerifyOTPView(APIView):
         if debug:
             # DEBUG → Skip OTP verification entirely
             pass
-        elif app_mode == "staging":
-            # STAGING → Verify against default OTP "123456"
-            if not entered_otp:
-                return Response({'error': 'OTP is required'}, status=status.HTTP_400_BAD_REQUEST)
-            if str(entered_otp) != '123456':
-                return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            # PROD → Verify actual OTP from database
+            # Get OTP record
             if not entered_otp:
                 return Response({'error': 'OTP is required'}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -681,6 +720,7 @@ class VerifyOTPView(APIView):
                 identifier=identifier,
                 is_verified=False
             ).order_by('-created_at').first()
+            
             if not otp_record:
                 return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -688,9 +728,36 @@ class VerifyOTPView(APIView):
             if otp_record.is_expired():
                 return Response({'error': 'OTP has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
             
-            # Verify OTP
-            if otp_record.otp_code != str(entered_otp):
-                return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+            # Determine channel type
+            channel_type = 'email' if '@' in identifier else 'sms'
+            
+            # If Sendmator session token exists, use Sendmator verification
+            if otp_record.session_token:
+                print(f"🔍 Using Sendmator verification for {identifier}")
+                verified, attempts_remaining, error = SendmatorService.verify_otp(
+                    session_token=otp_record.session_token,
+                    otp_code=entered_otp,
+                    channel_type=channel_type
+                )
+                
+                if not verified:
+                    error_msg = error or 'Invalid OTP'
+                    if attempts_remaining is not None and attempts_remaining > 0:
+                        error_msg += f'. {attempts_remaining} attempts remaining.'
+                    return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                
+                print(f"✅ Sendmator verification successful")
+            else:
+                # Fallback: Local OTP verification
+                print(f"🔍 Using local verification for {identifier}")
+                if app_mode == "staging":
+                    # STAGING → Verify against default OTP "123456"
+                    if str(entered_otp) != '123456':
+                        return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    # Verify against stored OTP
+                    if otp_record.otp_code != str(entered_otp):
+                        return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
             
             # Mark OTP as verified
             otp_record.is_verified = True
@@ -825,28 +892,43 @@ class ResendOTPView(APIView):
 
         otp_result = handle_otp(identifier=identifier, is_email=is_email, app_mode=app_mode, debug=debug)
 
-        if otp_result.get('otp'):
-            # Store new OTP in DB (5-minute expiry)
+        if otp_result.get('session_token') or otp_result.get('otp'):
+            # Store new OTP in DB (10-minute expiry for Sendmator)
             OTPVerification.objects.filter(identifier=identifier).delete()
-            expires_at = timezone.now() + timedelta(minutes=5)
-            OTPVerification.objects.create(identifier=identifier, otp_code=otp_result['otp'], expires_at=expires_at)
+            expires_at = timezone.now() + timedelta(minutes=10)
+            otp_code = otp_result.get('otp') or "SENDMATOR"
+            session_token = otp_result.get('session_token')
+            
+            OTPVerification.objects.create(
+                identifier=identifier, 
+                otp_code=otp_code, 
+                expires_at=expires_at,
+                session_token=session_token
+            )
+            
+            # Print OTP for debugging
+            if otp_result.get('otp'):
+                print(f"\n{'🔑 '*30}")
+                print(f"RESEND OTP FOR {identifier}: {otp_result['otp']}")
+                print(f"{'🔑 '*30}\n")
 
-        email_sent = otp_result.get('email_sent', True)
+        sendmator_used = otp_result.get('sendmator_used', False)
 
         response = {
             'show_otp': otp_result.get('show_otp', True),
-            'message': 'OTP resent' if not debug else 'Debug mode - no OTP sent',
-            'identifier': identifier
+            'message': 'OTP resent via Sendmator' if sendmator_used else ('OTP resent' if not debug else 'Debug mode - no OTP sent'),
+            'identifier': identifier,
+            'sendmator': sendmator_used
         }
 
         # For staging or debug, include OTP for QA convenience
-        if app_mode == 'staging' or debug:
+        if (app_mode == 'staging' or debug) and otp_result.get('otp'):
             response['otp'] = otp_result.get('otp')
 
-        # If email failed to send in production, include OTP in response for testing/debugging
-        if not email_sent and not (app_mode == 'staging' or debug):
+        # If Sendmator or email failed, include OTP in response for testing/debugging
+        if otp_result.get('error') and otp_result.get('otp'):
             response['otp'] = otp_result.get('otp')
-            response['note'] = 'Email sending failed - OTP included in response. Configure EMAIL_HOST_PASSWORD.'
+            response['note'] = f"Fallback mode: {otp_result['error']}"
 
         return Response(response, status=status.HTTP_200_OK)
 
