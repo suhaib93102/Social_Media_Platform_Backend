@@ -175,13 +175,14 @@ def send_otp_sms(phone_number, otp_code):
         return False
 
 
-def handle_otp(identifier, is_email, app_mode, debug, force_sendmator=False):
+def handle_otp(identifier, is_email, app_mode, debug, force_sendmator=False, skip_otp=False):
     """
     Core OTP logic handler using Sendmator:
     - prod + debug=false: Sendmator real OTP (if force_sendmator=True) or Gmail SMTP
     - prod + debug=true: Skip OTP
     - staging + debug=false: Sendmator sandbox mode
     - staging + debug=true: Skip OTP
+    - skip_otp=true: Skip OTP regardless of debug mode
     
     Returns: {
         "show_otp": bool, 
@@ -190,6 +191,15 @@ def handle_otp(identifier, is_email, app_mode, debug, force_sendmator=False):
         "sendmator_used": bool
     }
     """
+    # SKIP OTP → Skip OTP regardless of debug mode
+    if skip_otp:
+        return {
+            "show_otp": False,
+            "otp": None,
+            "session_token": None,
+            "sendmator_used": False
+        }
+    
     # DEBUG → Skip OTP
     if debug:
         return {
@@ -444,6 +454,9 @@ class SignupView(APIView):
         debug_body = request.data.get('debug', False)
         debug = debug_header or bool(debug_body)
         
+        # Skip OTP parameter - force direct profile creation
+        skip_otp = request.data.get('skip_otp', False)
+        
         # Sendmator parameter - force Sendmator usage if specified
         force_sendmator = request.data.get('sendmator', False)
         
@@ -523,7 +536,8 @@ class SignupView(APIView):
                 is_email=bool(email_id),
                 app_mode=app_mode,
                 debug=debug,
-                force_sendmator=force_sendmator
+                force_sendmator=force_sendmator,
+                skip_otp=skip_otp
             )
         except Exception as e:
             import traceback
@@ -535,6 +549,7 @@ class SignupView(APIView):
         
         # If OTP is required, store it and return
         if otp_result.get("otp_for_storage") or otp_result.get("session_token"):
+            # ... existing OTP storage code ...
             try:
                 # Delete old OTP codes for this identifier
                 OTPVerification.objects.filter(identifier=identifier).delete()
@@ -628,7 +643,7 @@ class SignupView(APIView):
                 refresh = RefreshToken.for_user(user)
                 
                 return Response({
-                    'show_otp': False,
+                    'debug': False,
                     'message': 'Guest upgraded to user successfully (debug mode)',
                     'user_role': 'user',
                     'user': {
@@ -671,7 +686,7 @@ class SignupView(APIView):
                     pending.delete()
                     
                     return Response({
-                        'show_otp': False,
+                        'debug': False,
                         'message': 'User created successfully (debug mode)',
                         'user_role': 'user',
                         'user': {
