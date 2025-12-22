@@ -1,10 +1,12 @@
+from .views import HealthCheckView
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     UserProfileViewSet, FollowRequestViewSet, FollowerViewSet,
     PostViewSet, StoryViewSet, ChatViewSet,
-    UserPostsView, UserStoriesView, ChatMessagesView
+    UserPostsView, UserStoriesView, ChatMessagesView,
+    AddPincodeView, SavePincodeView
 )
 from .auth_views import (
     SignupView, LoginView, GetInterestsView, 
@@ -24,8 +26,14 @@ router.register(r'chats', ChatViewSet, basename='chat')
 
 # URL patterns
 urlpatterns = [
+    # Health check endpoint
+    path('health/', HealthCheckView.as_view(), name='health'),
     # App initialization
     path('app-init/', AppInitView.as_view(), name='app-init'),
+
+    # Pincode endpoints
+    path('add-pincode/', AddPincodeView.as_view(), name='add-pincode'),
+    path('save-pincode/', SavePincodeView.as_view(), name='save-pincode'),
     
     # Authentication endpoints
     path('auth/signup/', SignupView.as_view(), name='auth-signup'),

@@ -72,6 +72,17 @@ class UserProfile(models.Model):
     USERNAME_FIELD = 'userId'
     REQUIRED_FIELDS = []
 
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    def get_username(self):
+        return self.userId
+
 
 class OTPVerification(models.Model):
     """Store OTP codes for email/phone verification"""

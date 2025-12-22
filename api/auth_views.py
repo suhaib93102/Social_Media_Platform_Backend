@@ -654,8 +654,7 @@ class SignupView(APIView):
                     'tokens': {
                         'refresh': str(refresh),
                         'access': str(refresh.access_token)
-                    },
-                    'location_details': location_details
+                    }
                 }, status=status.HTTP_200_OK)
             else:
                 # Create new user
@@ -663,7 +662,7 @@ class SignupView(APIView):
                     'userId': user_id,
                     'email': email_id,
                     'phone_number': number,
-                    'password': hashed_password,
+                    'password': password,
                     'latitude': float(lat),
                     'longitude': float(long),
                     'interests': interests,
@@ -697,8 +696,7 @@ class SignupView(APIView):
                         'tokens': {
                             'refresh': str(refresh),
                             'access': str(refresh.access_token)
-                        },
-                        'location_details': location_details
+                        }
                     }, status=status.HTTP_201_CREATED)
                 else:
                     return Response({'error': f'Validation error: {serializer.errors}'}, status=status.HTTP_400_BAD_REQUEST)
@@ -759,12 +757,6 @@ class LoginView(APIView):
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token)
-            },
-            'location_details': {
-                'pincode': user.pincode,
-                'city': user.city,
-                'state': user.state,
-                'country': user.country
             }
         }, status=status.HTTP_200_OK)
 
@@ -1463,13 +1455,7 @@ class SetupProfileView(APIView):
                     'gender': user.gender,
                     'age': user.age,
                     'image_url': user.profilePhoto or '',
-                    'address_details': user.address_details,
-                    'address': {
-                        'pincode': user.pincode or '',
-                        'city': user.city or '',
-                        'state': user.state or '',
-                        'country': user.country or ''
-                    }
+                    'address_details': user.address_details
                 }
             }, status=status.HTTP_200_OK)
         

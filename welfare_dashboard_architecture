@@ -1,0 +1,43 @@
+// Government Welfare Dashboard Architecture
+digraph {
+	dpi=300 rankdir=TB size=10
+	node [fontname=Helvetica shape=box style=filled]
+	subgraph cluster_0 {
+		color=red fontcolor=red label="TIER 1: BUREAUCRATIC SILOS (Supply Side)" style=dashed
+		A [label="Ministry of Education
+(Unstructured HTML)" fillcolor="#ffe6e6"]
+		B [label="Ministry of Skill Dev
+(Legacy Exports)" fillcolor="#ffe6e6"]
+		C [label="Ministry of Social Justice
+(PDF Guidelines)" fillcolor="#ffe6e6"]
+	}
+	subgraph cluster_1 {
+		color=lightgrey fontcolor=black label="TIER 2: HARMONIZATION ENGINE (The \"Rosetta Stone\")" style=filled
+		D [label="Web Scraping & OCR Layer
+(Python/BeautifulSoup)" fillcolor="#ffffcc" shape=component]
+		E [label="Semantic Normalization
+(Mapping \"Stipend\" == \"Aid\")" fillcolor="#ffffcc"]
+		D -> E [label="Raw Data"]
+	}
+	subgraph cluster_2 {
+		color=blue fontcolor=blue label="TIER 3: UNIFIED CIVIC DATA" style=solid
+		F [label="Standardized JSON Store
+(Single Source of Truth)" fillcolor="#e6f2ff" shape=cylinder]
+	}
+	subgraph cluster_3 {
+		color=green fontcolor=green label="TIER 4: CITIZEN INTERFACE (React)" style=solid
+		G [label="React Dashboard App" fillcolor="#e6ffe6"]
+		H [label="Cross-Ministry Visualizations" fillcolor="#e6ffe6"]
+		I [label="Scheme Discovery Engine" fillcolor="#e6ffe6"]
+	}
+	User [label="Citizen / NGO / Official" fillcolor=gold shape=ellipse style=filled]
+	A -> D
+	B -> D
+	C -> D
+	E -> F [label="Clean JSON"]
+	F -> G [label="Fetch API"]
+	G -> H
+	G -> I
+	H -> User
+	I -> User
+}

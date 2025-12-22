@@ -1,3 +1,74 @@
+from rest_framework.views import APIView, Response
+
+# Health check endpoint
+class HealthCheckView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def get(self, request):
+        return Response({'status': 'ok'}, status=200)
+from rest_framework.views import APIView, Response
+from rest_framework.permissions import IsAuthenticated
+from django.conf import settings
+import requests
+from .auth_views import get_location_details  # Import the function
+class AddPincodeView(APIView):
+    """
+    GET /add-pincode?lat=...&long=...
+    Returns the location details for the given latitude and longitude using Google Maps API.
+    """
+    def get(self, request):
+        lat = request.query_params.get('lat')
+        long = request.query_params.get('long')
+        if not lat or not long:
+            return Response({'error': 'lat and long are required'}, status=400)
+        try:
+            lat_f = float(lat)
+            long_f = float(long)
+        except ValueError:
+            return Response({'error': 'Invalid lat/long'}, status=400)
+        
+        # Get full location details
+        location_details = get_location_details(lat, long)
+        
+        return Response(location_details, status=200)
+
+from rest_framework.views import APIView, Response
+from rest_framework.permissions import IsAuthenticated
+from django.conf import settings
+import requests
+from .auth_views import get_location_details  # Import the function
+class SavePincodeView(APIView):
+    """
+    POST /save-pincode {lat, long}
+    Requires JWT authentication. Updates the user's pincode, latitude, longitude.
+    """
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        lat = request.data.get('lat')
+        long = request.data.get('long')
+        if not lat or not long:
+            return Response({'error': 'lat and long are required'}, status=400)
+        try:
+            lat_f = float(lat)
+            long_f = float(long)
+        except ValueError:
+            return Response({'error': 'Invalid lat/long'}, status=400)
+        
+        # Get full location details
+        location_details = get_location_details(lat, long)
+        
+        user = request.user
+        user.latitude = lat_f
+        user.longitude = long_f
+        user.pincode = location_details['pincode']
+        user.city = location_details['city']
+        user.state = location_details['state']
+        user.country = location_details['country']
+        try:
+            user.save()
+        except Exception as e:
+            return Response({'error': f'Failed to save user: {str(e)}'}, status=500)
+        return Response(location_details, status=200)
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
