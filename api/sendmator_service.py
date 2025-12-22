@@ -65,6 +65,7 @@ class SendmatorService:
             print(f"{'='*60}\n")
             
             response = requests.post(url, json=payload, headers=headers, timeout=10)
+            print(f"DEBUG: Sendmator response status: {response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
@@ -81,10 +82,19 @@ class SendmatorService:
                 
                 return (True, session_token, sandbox_otp, None)
             else:
-                error_msg = f"Sendmator API error: {response.status_code} - {response.text}"
+                error_msg = f"Sendmator API error: {response.status_code}"
                 print(f"❌ SENDMATOR ERROR: {error_msg}")
+                # Don't include response.text in error to avoid large responses
                 return (False, None, None, error_msg)
                 
+        except requests.exceptions.Timeout:
+            error_msg = "Sendmator API timeout"
+            print(f"❌ SENDMATOR TIMEOUT: {error_msg}")
+            return (False, None, None, error_msg)
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Sendmator network error: {str(e)}"
+            print(f"❌ SENDMATOR NETWORK ERROR: {error_msg}")
+            return (False, None, None, error_msg)
         except Exception as e:
             error_msg = f"Sendmator request failed: {type(e).__name__}: {e}"
             print(f"❌ SENDMATOR EXCEPTION: {error_msg}")
