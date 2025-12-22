@@ -60,6 +60,24 @@ class UserProfile(models.Model):
     
     # Address
     address_details = models.TextField(blank=True, null=True)
+    personal_address = models.TextField(blank=True, null=True)
+    work_address = models.TextField(blank=True, null=True)
+    
+    # Home location details
+    home_latitude = models.FloatField(null=True, blank=True)
+    home_longitude = models.FloatField(null=True, blank=True)
+    home_pincode = models.CharField(max_length=20, blank=True, null=True)
+    home_city = models.CharField(max_length=100, blank=True, null=True)
+    home_state = models.CharField(max_length=100, blank=True, null=True)
+    home_country = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Office location details
+    office_latitude = models.FloatField(null=True, blank=True)
+    office_longitude = models.FloatField(null=True, blank=True)
+    office_pincode = models.CharField(max_length=20, blank=True, null=True)
+    office_city = models.CharField(max_length=100, blank=True, null=True)
+    office_state = models.CharField(max_length=100, blank=True, null=True)
+    office_country = models.CharField(max_length=100, blank=True, null=True)
     
     idCardUrl = models.URLField(blank=True, null=True)
 

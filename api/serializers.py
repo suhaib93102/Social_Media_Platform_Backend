@@ -24,7 +24,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'profilePhoto', 'latitude', 'longitude', 'updatedAt',
             'pincode', 'city', 'state', 'country',
             'interests', 'activePincodes', 'additional_pincodes',
-            'followers', 'following', 'is_guest', 'idCardUrl'
+            'followers', 'following', 'is_guest', 'address_details', 'personal_address', 'work_address', 'idCardUrl'
         ]
         read_only_fields = ['updatedAt']
         extra_kwargs = {'password': {'write_only': True}}

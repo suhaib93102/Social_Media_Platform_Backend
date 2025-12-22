@@ -13,24 +13,47 @@ import requests
 from .auth_views import get_location_details  # Import the function
 class AddPincodeView(APIView):
     """
-    GET /add-pincode?lat=...&long=...
-    Returns the location details for the given latitude and longitude using Google Maps API.
+    POST /add-pincode
+    Takes home-address and office-address with lat and long, returns location details for each.
+    No authentication required.
+    Request body: {"home-address": {"lat": ..., "long": ...}, "office-address": {"lat": ..., "long": ...}}
+    Response: {"home-location": {...}, "office-location": {...}}
     """
-    def get(self, request):
-        lat = request.query_params.get('lat')
-        long = request.query_params.get('long')
-        if not lat or not long:
-            return Response({'error': 'lat and long are required'}, status=400)
-        try:
-            lat_f = float(lat)
-            long_f = float(long)
-        except ValueError:
-            return Response({'error': 'Invalid lat/long'}, status=400)
+    def post(self, request):
+        home_address = request.data.get('home-address')
+        office_address = request.data.get('office-address')
         
-        # Get full location details
-        location_details = get_location_details(lat, long)
+        response_data = {}
         
-        return Response(location_details, status=200)
+        if home_address:
+            lat = home_address.get('lat')
+            long = home_address.get('long')
+            if lat is not None and long is not None:
+                try:
+                    lat_f = float(lat)
+                    long_f = float(long)
+                    location_details = get_location_details(lat_f, long_f)
+                    response_data['home-location'] = location_details
+                except (ValueError, TypeError):
+                    response_data['home-location'] = {'error': 'Invalid lat/long for home'}
+            else:
+                response_data['home-location'] = {'error': 'lat and long required for home'}
+        
+        if office_address:
+            lat = office_address.get('lat')
+            long = office_address.get('long')
+            if lat is not None and long is not None:
+                try:
+                    lat_f = float(lat)
+                    long_f = float(long)
+                    location_details = get_location_details(lat_f, long_f)
+                    response_data['office-location'] = location_details
+                except (ValueError, TypeError):
+                    response_data['office-location'] = {'error': 'Invalid lat/long for office'}
+            else:
+                response_data['office-location'] = {'error': 'lat and long required for office'}
+        
+        return Response(response_data, status=200)
 
 from rest_framework.views import APIView, Response
 from rest_framework.permissions import IsAuthenticated
@@ -39,36 +62,80 @@ import requests
 from .auth_views import get_location_details  # Import the function
 class SavePincodeView(APIView):
     """
-    POST /save-pincode {lat, long}
-    Requires JWT authentication. Updates the user's pincode, latitude, longitude.
+    POST /save-pincode
+    Requires JWT authentication. Saves home and office addresses with their locations.
+    Request body: {"home-address": {"lat": ..., "long": ..., "address": ...}, "office-address": {"lat": ..., "long": ..., "address": ...}}
     """
     permission_classes = [IsAuthenticated]
     def post(self, request):
-        lat = request.data.get('lat')
-        long = request.data.get('long')
-        if not lat or not long:
-            return Response({'error': 'lat and long are required'}, status=400)
-        try:
-            lat_f = float(lat)
-            long_f = float(long)
-        except ValueError:
-            return Response({'error': 'Invalid lat/long'}, status=400)
-        
-        # Get full location details
-        location_details = get_location_details(lat, long)
+        home_address = request.data.get('home-address')
+        office_address = request.data.get('office-address')
         
         user = request.user
-        user.latitude = lat_f
-        user.longitude = long_f
-        user.pincode = location_details['pincode']
-        user.city = location_details['city']
-        user.state = location_details['state']
-        user.country = location_details['country']
+        
+        if home_address:
+            lat = home_address.get('lat')
+            long = home_address.get('long')
+            address = home_address.get('address')
+            if lat is not None and long is not None:
+                try:
+                    lat_f = float(lat)
+                    long_f = float(long)
+                    location_details = get_location_details(lat_f, long_f)
+                    user.home_latitude = lat_f
+                    user.home_longitude = long_f
+                    user.home_pincode = location_details['pincode']
+                    user.home_city = location_details['city']
+                    user.home_state = location_details['state']
+                    user.home_country = location_details['country']
+                    if address:
+                        user.personal_address = address
+                except (ValueError, TypeError):
+                    return Response({'error': 'Invalid lat/long for home'}, status=400)
+        
+        if office_address:
+            lat = office_address.get('lat')
+            long = office_address.get('long')
+            address = office_address.get('address')
+            if lat is not None and long is not None:
+                try:
+                    lat_f = float(lat)
+                    long_f = float(long)
+                    location_details = get_location_details(lat_f, long_f)
+                    user.office_latitude = lat_f
+                    user.office_longitude = long_f
+                    user.office_pincode = location_details['pincode']
+                    user.office_city = location_details['city']
+                    user.office_state = location_details['state']
+                    user.office_country = location_details['country']
+                    if address:
+                        user.work_address = address
+                except (ValueError, TypeError):
+                    return Response({'error': 'Invalid lat/long for office'}, status=400)
+        
         try:
             user.save()
         except Exception as e:
             return Response({'error': f'Failed to save user: {str(e)}'}, status=500)
-        return Response(location_details, status=200)
+        
+        response_data = {'message': 'Addresses saved successfully'}
+        if home_address:
+            response_data['home-location'] = {
+                'pincode': user.home_pincode,
+                'city': user.home_city,
+                'state': user.home_state,
+                'country': user.home_country,
+                'address': user.personal_address
+            }
+        if office_address:
+            response_data['office-location'] = {
+                'pincode': user.office_pincode,
+                'city': user.office_city,
+                'state': user.office_state,
+                'country': user.office_country,
+                'address': user.work_address
+            }
+        return Response(response_data, status=200)
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
