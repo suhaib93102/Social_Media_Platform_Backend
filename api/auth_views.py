@@ -427,6 +427,7 @@ class SignupView(APIView):
       * Requires OTP verification via /auth/verify-otp/
     """
     def post(self, request):
+        print(f"DEBUG: Signup request received: {request.data}")
         # Get and validate headers
         device_id, app_mode, _, headers_valid, headers_error = get_headers(request)
         if not headers_valid:
@@ -470,7 +471,9 @@ class SignupView(APIView):
             return Response({'error': coords_error}, status=status.HTTP_400_BAD_REQUEST)
         
         # Get location details from coordinates
+        print(f"DEBUG: Getting location details for lat={lat}, long={long}")
         location_details = get_location_details(lat, long)
+        print(f"DEBUG: Location details: {location_details}")
         
         # Validate pincode from location details
         pincode_valid, pincode_error, cleaned_pincode = validate_pincode(location_details.get('pincode'))
@@ -490,9 +493,13 @@ class SignupView(APIView):
             user_id = f"user_{number}"
             identifier = number
         
+        print(f"DEBUG: identifier={identifier}, user_id={user_id}")
+        
         # Check if user already exists
         if UserProfile.objects.filter(userId=user_id).exists():
             return Response({'error': 'User already exists'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        print(f"DEBUG: User does not exist, proceeding with signup")
         
         if email_id and UserProfile.objects.filter(email=email_id).exists():
             return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
@@ -665,8 +672,11 @@ class SignupView(APIView):
                 }
                 
                 serializer = UserProfileSerializer(data=user_data)
+                print(f"DEBUG: User data: {user_data}")
                 if serializer.is_valid():
+                    print(f"DEBUG: Serializer is valid, saving user...")
                     user = serializer.save()
+                    print(f"DEBUG: User created successfully: {user.userId}")
                     
                     # Generate JWT tokens
                     refresh = RefreshToken.for_user(user)
@@ -689,6 +699,9 @@ class SignupView(APIView):
                         },
                         'location_details': location_details
                     }, status=status.HTTP_201_CREATED)
+                else:
+                    print(f"DEBUG: Serializer validation failed: {serializer.errors}")
+                    return Response({'error': f'Validation error: {serializer.errors}'}, status=status.HTTP_400_BAD_REQUEST)
                 
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

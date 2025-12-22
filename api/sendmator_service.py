@@ -34,6 +34,8 @@ class SendmatorService:
             print("❌ SENDMATOR_API_KEY not configured")
             return (False, None, None, "Sendmator API key not configured")
         
+        print(f"DEBUG: Using Sendmator API key: {api_key[:10]}...")
+        
         url = f"{SendmatorService.BASE_URL}/send"
         headers = {
             "X-API-Key": api_key,
