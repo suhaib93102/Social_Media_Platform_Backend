@@ -175,10 +175,10 @@ def send_otp_sms(phone_number, otp_code):
         return False
 
 
-def handle_otp(identifier, is_email, app_mode, debug):
+def handle_otp(identifier, is_email, app_mode, debug, force_sendmator=False):
     """
     Core OTP logic handler using Sendmator:
-    - prod + debug=false: Sendmator real OTP
+    - prod + debug=false: Sendmator real OTP (if force_sendmator=True) or Gmail SMTP
     - prod + debug=true: Skip OTP
     - staging + debug=false: Sendmator sandbox mode
     - staging + debug=true: Skip OTP
@@ -202,9 +202,20 @@ def handle_otp(identifier, is_email, app_mode, debug):
     # Determine if we should use sandbox mode
     sandbox_mode = (app_mode == "staging")
     
-    # TEMPORARY: Use Gmail SMTP for production emails until Sendmator is configured
-    # Use Sendmator only for staging/sandbox testing
-    if sandbox_mode:
+    # Check if Sendmator is forced via request parameter
+    if force_sendmator:
+        # Force Sendmator usage regardless of app_mode
+        if is_email:
+            success, session_token, otp, error = SendmatorService.send_otp_email(
+                identifier, 
+                sandbox_mode=False  # Force production mode when explicitly requested
+            )
+        else:
+            success, session_token, otp, error = SendmatorService.send_otp_sms(
+                identifier, 
+                sandbox_mode=False
+            )
+    elif sandbox_mode:
         # Use Sendmator for sandbox testing
         if is_email:
             success, session_token, otp, error = SendmatorService.send_otp_email(
@@ -235,10 +246,10 @@ def handle_otp(identifier, is_email, app_mode, debug):
     if success:
         return {
             "show_otp": True,
-            "otp": otp if sandbox_mode else None,  # Only expose OTP in sandbox mode
+            "otp": otp if sandbox_mode or force_sendmator else None,  # Only expose OTP in sandbox mode or when forced
             "otp_for_storage": otp,  # Always include OTP for database storage
             "session_token": session_token,
-            "sendmator_used": True,
+            "sendmator_used": True if force_sendmator or sandbox_mode else False,
             "error": None
         }
     else:
@@ -433,6 +444,9 @@ class SignupView(APIView):
         debug_body = request.data.get('debug', False)
         debug = debug_header or bool(debug_body)
         
+        # Sendmator parameter - force Sendmator usage if specified
+        force_sendmator = request.data.get('sendmator', False)
+        
         # Validate input
         if not password:
             return Response({'error': 'Password is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -507,12 +521,21 @@ class SignupView(APIView):
         )
         
         # Handle OTP using the new core logic
-        otp_result = handle_otp(
-            identifier=identifier,
-            is_email=bool(email_id),
-            app_mode=app_mode,
-            debug=debug
-        )
+        try:
+            otp_result = handle_otp(
+                identifier=identifier,
+                is_email=bool(email_id),
+                app_mode=app_mode,
+                debug=debug,
+                force_sendmator=force_sendmator
+            )
+        except Exception as e:
+            import traceback
+            print(f"\n{'='*60}")
+            print(f"ERROR IN handle_otp:")
+            print(traceback.format_exc())
+            print(f"{'='*60}\n")
+            return Response({'error': f'OTP service error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # If OTP is required, store it and return
         if otp_result.get("session_token") or otp_result.get("otp"):
