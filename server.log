@@ -1,0 +1,2 @@
+/Users/vishaljha/.pyenv/versions/3.10.13/lib/python3.10/site-packages/django/core/handlers/base.py:61: UserWarning: No directory at: /Users/vishaljha/backend/staticfiles/
+  mw_instance = middleware(adapted_handler)

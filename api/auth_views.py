@@ -202,22 +202,41 @@ def handle_otp(identifier, is_email, app_mode, debug):
     # Determine if we should use sandbox mode
     sandbox_mode = (app_mode == "staging")
     
-    # Use Sendmator for OTP sending
-    if is_email:
-        success, session_token, otp, error = SendmatorService.send_otp_email(
-            identifier, 
-            sandbox_mode=sandbox_mode
-        )
+    # TEMPORARY: Use Gmail SMTP for production emails until Sendmator is configured
+    # Use Sendmator only for staging/sandbox testing
+    if sandbox_mode:
+        # Use Sendmator for sandbox testing
+        if is_email:
+            success, session_token, otp, error = SendmatorService.send_otp_email(
+                identifier, 
+                sandbox_mode=sandbox_mode
+            )
+        else:
+            success, session_token, otp, error = SendmatorService.send_otp_sms(
+                identifier, 
+                sandbox_mode=sandbox_mode
+            )
     else:
-        success, session_token, otp, error = SendmatorService.send_otp_sms(
-            identifier, 
-            sandbox_mode=sandbox_mode
-        )
+        # Production mode: Use Gmail SMTP for now (Sendmator not configured)
+        print(f"📧 Using Gmail SMTP for production email to {identifier}")
+        otp = generate_otp()
+        
+        if is_email:
+            email_sent, otp = send_email_otp(identifier, otp)
+            success = email_sent
+            error = None if email_sent else "Gmail SMTP send failed"
+        else:
+            send_otp_sms(identifier, otp)
+            success = True
+            error = None
+        
+        session_token = None  # No Sendmator token in SMTP mode
     
     if success:
         return {
             "show_otp": True,
             "otp": otp if sandbox_mode else None,  # Only expose OTP in sandbox mode
+            "otp_for_storage": otp,  # Always include OTP for database storage
             "session_token": session_token,
             "sendmator_used": True,
             "error": None
@@ -236,6 +255,7 @@ def handle_otp(identifier, is_email, app_mode, debug):
         return {
             "show_otp": True,
             "otp": otp,
+            "otp_for_storage": otp,
             "session_token": None,
             "sendmator_used": False,
             "email_sent": email_sent,
@@ -257,13 +277,13 @@ def create_otp_record(identifier, otp_code, session_token=None):
 def get_location_details(lat, long):
     """
     Get location details (pincode, city, state, country) from coordinates.
-    Uses a geocoding API (Nominatim OpenStreetMap)
+    Uses Google Maps Geocoding API
     """
     try:
         # Basic coordinate validation
         lat_float = float(lat)
         long_float = float(long)
-        
+
         # Check if coordinates are in valid range
         if not (-90 <= lat_float <= 90) or not (-180 <= long_float <= 180):
             print(f"Invalid coordinates: lat={lat}, long={long}")
@@ -273,35 +293,70 @@ def get_location_details(lat, long):
                 'state': 'Invalid Coordinates',
                 'country': 'Invalid Coordinates'
             }
-        
-        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={long}&format=json"
-        headers = {'User-Agent': 'PinmateApp/1.0'}
-        response = requests.get(url, headers=headers, timeout=5)
-        
+
+        # Use Google Maps Geocoding API
+        url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{long}&key={settings.GOOGLE_MAPS_API_KEY}"
+        response = requests.get(url, timeout=10)
+
         if response.status_code == 200:
             data = response.json()
-            
+
             # Check if geocoding was successful
-            if 'error' in data:
-                print(f"Geocoding API error: {data['error']}")
+            if data.get('status') != 'OK':
+                print(f"Google Geocoding API error: {data.get('status')}")
                 return {
                     'pincode': '000000',
                     'city': 'Location Not Found',
                     'state': 'Location Not Found',
                     'country': 'Location Not Found'
                 }
-            
-            address = data.get('address', {})
-            
-            return {
-                'pincode': address.get('postcode', '000000'),
-                'city': address.get('city') or address.get('town') or address.get('village', 'Unknown'),
-                'state': address.get('state', 'Unknown'),
-                'country': address.get('country', 'Unknown')
+
+            # Get the first result
+            if not data.get('results'):
+                print("No geocoding results found")
+                return {
+                    'pincode': '000000',
+                    'city': 'Location Not Found',
+                    'state': 'Location Not Found',
+                    'country': 'Location Not Found'
+                }
+
+            result = data['results'][0]
+            address_components = result.get('address_components', [])
+
+            # Parse address components
+            location_data = {
+                'pincode': '000000',
+                'city': 'Unknown',
+                'state': 'Unknown',
+                'country': 'Unknown'
             }
+
+            for component in address_components:
+                types = component.get('types', [])
+                long_name = component.get('long_name', '')
+
+                if 'postal_code' in types:
+                    location_data['pincode'] = long_name
+                elif 'locality' in types:
+                    location_data['city'] = long_name
+                elif 'administrative_area_level_1' in types:
+                    location_data['state'] = long_name
+                elif 'country' in types:
+                    location_data['country'] = long_name
+
+            # Fallback for city if locality not found
+            if location_data['city'] == 'Unknown':
+                for component in address_components:
+                    types = component.get('types', [])
+                    if 'administrative_area_level_2' in types:
+                        location_data['city'] = component.get('long_name', 'Unknown')
+                        break
+
+            return location_data
         else:
-            print(f"Geocoding API returned status {response.status_code}")
-            
+            print(f"Google Geocoding API returned status {response.status_code}")
+
     except ValueError as e:
         print(f"Invalid coordinate format: {e}")
         return {
@@ -312,7 +367,7 @@ def get_location_details(lat, long):
         }
     except Exception as e:
         print(f"Geocoding error: {e}")
-    
+
     # Default fallback
     return {
         'pincode': '000000',
@@ -461,56 +516,67 @@ class SignupView(APIView):
         
         # If OTP is required, store it and return
         if otp_result.get("session_token") or otp_result.get("otp"):
-            # Delete old OTP codes for this identifier
-            OTPVerification.objects.filter(identifier=identifier).delete()
-            
-            # Create new OTP record with 10-minute expiry (Sendmator default)
-            expires_at = timezone.now() + timedelta(minutes=10)
-            
-            # Store OTP code (from sandbox) or use placeholder for Sendmator verification
-            otp_code = otp_result.get("otp") or "SENDMATOR"
-            session_token = otp_result.get("session_token")
-            
-            OTPVerification.objects.create(
-                identifier=identifier,
-                otp_code=otp_code,
-                expires_at=expires_at,
-                session_token=session_token
-            )
-            
-            # For development/debugging: Print OTP to console
-            if otp_result.get("otp"):
-                print(f"\n{'🔑 '*30}")
-                print(f"OTP FOR {identifier}: {otp_result['otp']}")
-                print(f"{'🔑 '*30}\n")
-            
-            # Check if using Sendmator
-            sendmator_used = otp_result.get('sendmator_used', False)
-            
-            response_data = {
-                'show_otp': otp_result["show_otp"],
-                'message': 'OTP sent via Sendmator' if sendmator_used else 'OTP sent successfully',
-                'identifier': identifier,
-                'sendmator': sendmator_used
-            }
-            
-            # Include OTP in sandbox/staging mode or if email failed
-            if otp_result.get("otp"):
-                response_data['otp'] = otp_result['otp']
-            
-            # If Sendmator failed or email failed to send
-            if otp_result.get('error'):
-                response_data['note'] = f"Fallback mode: {otp_result['error']}"
-            
-            email_sent = otp_result.get('email_sent', True)
-            if not email_sent and not sendmator_used:
-                response_data['otp'] = otp_result["otp"]
-                response_data['note'] = 'Email sending failed - OTP included in response. Configure EMAIL_HOST_PASSWORD.'
-            
-            return Response(response_data, status=status.HTTP_200_OK)
+            try:
+                # Delete old OTP codes for this identifier
+                OTPVerification.objects.filter(identifier=identifier).delete()
+                
+                # Create new OTP record with 10-minute expiry (Sendmator default)
+                expires_at = timezone.now() + timedelta(minutes=10)
+                
+                # Store OTP code - use otp_for_storage which always has the OTP value
+                # In sandbox mode: otp_for_storage contains the OTP (same as otp)
+                # In production mode: otp_for_storage contains the OTP (otp is None for security)
+                otp_code = otp_result.get("otp_for_storage") or otp_result.get("otp") or "000000"
+                session_token = otp_result.get("session_token")
+                
+                OTPVerification.objects.create(
+                    identifier=identifier,
+                    otp_code=otp_code,
+                    expires_at=expires_at,
+                    session_token=session_token
+                )
+                
+                # For development/debugging: Print OTP to console
+                if otp_result.get("otp"):
+                    print(f"\n{'🔑 '*30}")
+                    print(f"OTP FOR {identifier}: {otp_result['otp']}")
+                    print(f"{'🔑 '*30}\n")
+                
+                # Check if using Sendmator
+                sendmator_used = otp_result.get('sendmator_used', False)
+                
+                response_data = {
+                    'show_otp': otp_result.get("show_otp", True),
+                    'message': 'OTP sent via Sendmator' if sendmator_used else 'OTP sent successfully',
+                    'identifier': identifier,
+                    'sendmator': sendmator_used
+                }
+                
+                # Include OTP in sandbox/staging mode or if email failed
+                if otp_result.get("otp"):
+                    response_data['otp'] = otp_result['otp']
+                
+                # If Sendmator failed or email failed to send
+                if otp_result.get('error'):
+                    response_data['note'] = f"Fallback mode: {otp_result['error']}"
+                
+                email_sent = otp_result.get('email_sent', True)
+                if not email_sent and not sendmator_used:
+                    if otp_result.get("otp"):
+                        response_data['otp'] = otp_result["otp"]
+                    response_data['note'] = 'Email sending failed - OTP included in response. Configure EMAIL_HOST_PASSWORD.'
+                
+                return Response(response_data, status=status.HTTP_200_OK)
+            except Exception as e:
+                import traceback
+                print(f"\n{'='*60}")
+                print(f"ERROR IN SIGNUP OTP STORAGE:")
+                print(traceback.format_exc())
+                print(f"{'='*60}\n")
+                return Response({'error': f'Signup error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Debug mode: Skip OTP and create user immediately
-        if not otp_result["show_otp"]:
+        if not otp_result.get("show_otp", True):
             # Debug mode: check for existing guest user to upgrade
             guest_user = None
             if device_id:
@@ -896,7 +962,7 @@ class ResendOTPView(APIView):
             # Store new OTP in DB (10-minute expiry for Sendmator)
             OTPVerification.objects.filter(identifier=identifier).delete()
             expires_at = timezone.now() + timedelta(minutes=10)
-            otp_code = otp_result.get('otp') or "SENDMATOR"
+            otp_code = otp_result.get('otp') or "000000"  # Placeholder for Sendmator (6 chars max)
             session_token = otp_result.get('session_token')
             
             OTPVerification.objects.create(
