@@ -486,11 +486,9 @@ class SignupView(APIView):
             email_id = email_id.strip().lower()
             user_id = email_id.split('@')[0]
             identifier = email_id
-            print(f"DEBUG: Email signup - identifier: {identifier}")
         else:
             user_id = f"user_{number}"
             identifier = number
-            print(f"DEBUG: SMS signup - identifier: {identifier}, number: {number}")
         
         # Check if user already exists
         if UserProfile.objects.filter(userId=user_id).exists():
@@ -541,7 +539,6 @@ class SignupView(APIView):
         
         # If OTP is required, store it and return
         if otp_result.get("otp_for_storage"):
-            print(f"DEBUG: otp_result = {otp_result}")
             try:
                 # Delete old OTP codes for this identifier
                 OTPVerification.objects.filter(identifier=identifier).delete()
@@ -555,16 +552,12 @@ class SignupView(APIView):
                 otp_code = otp_result.get("otp_for_storage") or otp_result.get("otp") or "000000"
                 session_token = otp_result.get("session_token")
                 
-                print(f"DEBUG: Creating OTP record - identifier={identifier}, otp_code={otp_code}, session_token={session_token}")
-                
                 OTPVerification.objects.create(
                     identifier=identifier,
                     otp_code=otp_code,
                     expires_at=expires_at,
                     session_token=session_token
                 )
-                
-                print(f"DEBUG: OTP record created successfully")
                 
                 # For development/debugging: Print OTP to console
                 if otp_result.get("otp"):
