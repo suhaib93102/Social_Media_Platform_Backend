@@ -13,12 +13,21 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+import logging
+
+# Configure logging for startup debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Load environment variables
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+logger.info(f"Starting Django application from {BASE_DIR}")
+logger.info(f"DEBUG mode: {os.getenv('DEBUG', 'False')}")
+logger.info(f"ALLOWED_HOSTS: {os.getenv('ALLOWED_HOSTS', '*')}")
 
 
 # Quick-start development settings - unsuitable for production
@@ -86,6 +95,9 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # Supabase PostgreSQL configuration
 SUPABASE_URL = os.getenv('SubaseUrl', 'https://qzhfqngedeadnyeqtoqp.supabase.co')
 SUPABASE_DB_PASSWORD = os.getenv('SUPABASE_DB_PASSWORD', '955Fp4x0TrLoWjha')
+
+logger.info(f"Database URL: {SUPABASE_URL}")
+logger.info(f"Database password configured: {'Yes' if SUPABASE_DB_PASSWORD else 'No'}")
 
 # Session Pooler connection to Supabase PostgreSQL
 DATABASES = {
@@ -209,8 +221,16 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')  # Use Gmail App Password
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
 
+logger.info(f"Email host configured: {'Yes' if EMAIL_HOST else 'No'}")
+logger.info(f"Email user configured: {'Yes' if EMAIL_HOST_USER else 'No'}")
+
 # Sendmator Configuration
 SENDMATOR_API_KEY = os.getenv('SENDMATOR_API_KEY', '')
 
+logger.info(f"Sendmator API key configured: {'Yes' if SENDMATOR_API_KEY else 'No'}")
+
 # Google Maps API Configuration
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+
+logger.info(f"Google Maps API key configured: {'Yes' if GOOGLE_MAPS_API_KEY else 'No'}")
+logger.info("Django settings loaded successfully")
