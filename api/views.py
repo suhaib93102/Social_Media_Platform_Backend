@@ -76,6 +76,7 @@ class SavePincodeView(APIView):
         if home_address:
             lat = home_address.get('lat')
             long = home_address.get('long')
+            pincode = home_address.get('pincode')
             address = home_address.get('address')
             if lat is not None and long is not None:
                 try:
@@ -84,7 +85,7 @@ class SavePincodeView(APIView):
                     location_details = get_location_details(lat_f, long_f)
                     user.home_latitude = lat_f
                     user.home_longitude = long_f
-                    user.home_pincode = location_details['pincode']
+                    user.home_pincode = pincode or location_details['pincode']
                     user.home_city = location_details['city']
                     user.home_state = location_details['state']
                     user.home_country = location_details['country']
@@ -96,6 +97,7 @@ class SavePincodeView(APIView):
         if office_address:
             lat = office_address.get('lat')
             long = office_address.get('long')
+            pincode = office_address.get('pincode')
             address = office_address.get('address')
             if lat is not None and long is not None:
                 try:
@@ -104,7 +106,7 @@ class SavePincodeView(APIView):
                     location_details = get_location_details(lat_f, long_f)
                     user.office_latitude = lat_f
                     user.office_longitude = long_f
-                    user.office_pincode = location_details['pincode']
+                    user.office_pincode = pincode or location_details['pincode']
                     user.office_city = location_details['city']
                     user.office_state = location_details['state']
                     user.office_country = location_details['country']

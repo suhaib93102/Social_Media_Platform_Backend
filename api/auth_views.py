@@ -1454,8 +1454,7 @@ class SetupProfileView(APIView):
                     'bio': user.bio,
                     'gender': user.gender,
                     'age': user.age,
-                    'image_url': user.profilePhoto or '',
-                    'address_details': user.address_details
+                    'image_url': user.profilePhoto or ''
                 }
             }, status=status.HTTP_200_OK)
         
