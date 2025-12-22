@@ -759,6 +759,12 @@ class LoginView(APIView):
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token)
+            },
+            'location_details': {
+                'pincode': user.pincode,
+                'city': user.city,
+                'state': user.state,
+                'country': user.country
             }
         }, status=status.HTTP_200_OK)
 
