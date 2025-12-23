@@ -34,7 +34,7 @@ run_signup() {
   resp=$(curl -s -X POST "$BASE/auth/signup/" \
     -H "Content-Type: application/json" \
     -H "x-device-id: $device" \
-    -H "x-app-mode: $app_mode" \
+    -H "app-mode: $app_mode" \
     -d "$body")
 
   echo "$resp" | jq '.'
@@ -80,5 +80,5 @@ run_signup() {
     wrong_raw=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$BASE/auth/verify-otp/" \
       -H "Content-Type: application/json" \
       -H "x-device-id: $device" \
-      -H "x-app-mode: $app_mode" \
+      -H "app-mode: $app_mode" \
       -d '{"identifier":"'

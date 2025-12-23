@@ -19,9 +19,9 @@ def get_headers(request):
         return None, None, None, False, "x-device-id header is required"
     
     # Get app_mode (prod or staging) - default to prod
-    app_mode = request.META.get('HTTP_X_APP_MODE', 'prod').strip().lower()
+    app_mode = request.META.get('HTTP_APP_MODE', 'prod').strip().lower()
     if app_mode not in ['prod', 'staging', 'debug', 'release']:
-        return device_id, None, None, False, "x-app-mode must be 'prod', 'staging', 'debug' or 'release'"
+        return device_id, None, None, False, "app-mode must be 'prod', 'staging', 'debug' or 'release'"
     
     # Get authorization token (optional)
     auth_header = request.META.get('HTTP_AUTHORIZATION', '').strip()
@@ -56,7 +56,7 @@ def get_or_create_guest_user(device_id):
 def is_debug_mode(app_mode):
     """
     Check if running in debug mode
-    DEBUG: NODE_ENV=development AND x-app-mode=debug
+    DEBUG: NODE_ENV=development AND app-mode=debug
     """
     env = os.getenv('NODE_ENV', 'development')
     return env == 'development' and app_mode == 'debug'
