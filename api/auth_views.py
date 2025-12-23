@@ -408,7 +408,7 @@ class SignupView(APIView):
     
     Headers (Required):
     - x-device-id: Unique device identifier
-    - app-mode: 'debug' or 'release'
+    - app-mode: 'debug' or 'release' (or x-app-mode for backward compatibility)
     - x-debug: 'true' or 'false' (optional, enables test mode)
     
     Request: 
@@ -764,7 +764,7 @@ class VerifyOTPView(APIView):
     
     Headers (Required):
     - x-device-id: Unique device identifier
-    - app-mode: 'debug' or 'release'
+    - app-mode: 'debug' or 'release' (or x-app-mode for backward compatibility)
     
     Request: {
         "identifier": "email or phone", 
@@ -1467,7 +1467,7 @@ class AppInitView(APIView):
     
     Headers (Required):
     - x-device-id: Unique device identifier
-    - app-mode: 'debug' or 'release'
+    - app-mode: 'debug' or 'release' (or x-app-mode for backward compatibility)
     
     Headers (Optional):
     - Authorization: Bearer <token> (if user is logged in)
