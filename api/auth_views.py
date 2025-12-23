@@ -178,10 +178,9 @@ def send_otp_sms(phone_number, otp_code):
 def handle_otp(identifier, is_email, app_mode, debug, force_sendmator=False, skip_otp=False):
     """
     Core OTP logic handler using Sendmator:
-    - prod + debug=false: Sendmator real OTP (if force_sendmator=True) or Gmail SMTP
-    - prod + debug=true: Skip OTP
-    - staging + debug=false: Sendmator sandbox mode
-    - staging + debug=true: Skip OTP
+    - debug=true: Return fixed test OTP (123456), no real SMS/Email sent
+    - debug=false + prod: Sendmator real OTP (if force_sendmator=True) or Gmail SMTP
+    - debug=false + staging: Sendmator sandbox mode
     - skip_otp=true: Skip OTP regardless of debug mode
     
     Returns: {
@@ -200,13 +199,16 @@ def handle_otp(identifier, is_email, app_mode, debug, force_sendmator=False, ski
             "sendmator_used": False
         }
     
-    # DEBUG → Skip OTP
+    # DEBUG → Return fixed test OTP for easy testing
     if debug:
         return {
-            "show_otp": False,
-            "otp": None,
+            "show_otp": True,
+            "otp": "123456",
+            "otp_for_storage": "123456",
             "session_token": None,
-            "sendmator_used": False
+            "sendmator_used": False,
+            "email_sent": False,
+            "debug_mode": True
         }
     
     # Determine if we should use sandbox mode
@@ -407,6 +409,7 @@ class SignupView(APIView):
     Headers (Required):
     - x-device-id: Unique device identifier
     - x-app-mode: 'debug' or 'release'
+    - x-debug: 'true' or 'false' (optional, enables test mode)
     
     Request: 
     {
@@ -414,8 +417,7 @@ class SignupView(APIView):
         "password": "...", 
         "lat": "...", 
         "long": "...", 
-        "interests": [...],
-        "debug": true/false (optional, overrides environment-based debug mode)
+        "interests": [...]
     }
     or
     {
@@ -423,18 +425,12 @@ class SignupView(APIView):
         "password": "...", 
         "lat": "...", 
         "long": "...", 
-        "interests": [...],
-        "debug": true/false (optional)
+        "interests": [...]
     }
     
     Debug Mode Behavior:
-    - If debug=true OR (NODE_ENV=development AND x-app-mode=debug):
-      * User created immediately without OTP verification
-      * No SMS/Email sent
-      * Returns tokens and user data
-    - Otherwise:
-      * Sends real OTP via SMS/Email
-      * Requires OTP verification via /auth/verify-otp/
+    - x-debug: 'true' → Returns fixed test OTP (123456) for easy testing, no real SMS/Email sent
+    - x-debug: 'false' or not set → Sends real OTP via SMS/Email
     """
     def post(self, request):
         # Get and validate headers
@@ -449,10 +445,8 @@ class SignupView(APIView):
         long = request.data.get('long')
         interests = request.data.get('interests', [])
         
-        # Debug parameter - support both header and body
-        debug_header = request.headers.get('debug', 'false').lower() == 'true'
-        debug_body = request.data.get('debug', False)
-        debug = debug_header or bool(debug_body)
+        # Debug parameter - read from header only
+        debug = request.headers.get('x-debug', 'false').lower() == 'true'
         
         # Skip OTP parameter - force direct profile creation
         skip_otp = request.data.get('skip_otp', False)
@@ -578,24 +572,26 @@ class SignupView(APIView):
                 
                 # Check if using Sendmator
                 sendmator_used = otp_result.get('sendmator_used', False)
+                debug_mode = otp_result.get('debug_mode', False)
                 
                 response_data = {
                     'show_otp': otp_result.get("show_otp", True),
-                    'message': 'OTP sent via Sendmator' if sendmator_used else 'OTP sent successfully',
+                    'message': 'Test OTP: 123456 (Debug Mode)' if debug_mode else ('OTP sent via Sendmator' if sendmator_used else 'OTP sent successfully'),
                     'identifier': identifier,
                     'sendmator': sendmator_used
                 }
                 
-                # Include OTP in sandbox/staging mode or if email failed
+                # Include OTP in sandbox/staging/debug mode or if email failed
                 if otp_result.get("otp"):
                     response_data['otp'] = otp_result['otp']
                 
-                # If Sendmator failed or email failed to send
-                if otp_result.get('error'):
+                # If debug mode, add note
+                if debug_mode:
+                    response_data['note'] = 'Debug mode enabled: Use OTP 123456 for verification'
+                # If Sendmator failed or email failed to send (but not in debug mode)
+                elif otp_result.get('error'):
                     response_data['note'] = f"Fallback mode: {otp_result['error']}"
-                
-                email_sent = otp_result.get('email_sent', True)
-                if not email_sent and not sendmator_used:
+                elif not otp_result.get('email_sent', True) and not sendmator_used:
                     if otp_result.get("otp"):
                         response_data['otp'] = otp_result["otp"]
                     response_data['note'] = 'Email sending failed - OTP included in response. Configure EMAIL_HOST_PASSWORD.'
