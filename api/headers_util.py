@@ -19,7 +19,9 @@ def get_headers(request):
         return None, None, None, False, "x-device-id header is required"
     
     # Get app_mode (prod or staging) - default to prod
-    app_mode = request.META.get('HTTP_APP_MODE', 'prod').strip().lower()
+    # Check both new 'app-mode' and old 'x-app-mode' headers for backward compatibility
+    app_mode = request.META.get('HTTP_APP_MODE') or request.META.get('HTTP_X_APP_MODE', 'prod')
+    app_mode = app_mode.strip().lower()
     if app_mode not in ['prod', 'staging', 'debug', 'release']:
         return device_id, None, None, False, "app-mode must be 'prod', 'staging', 'debug' or 'release'"
     
