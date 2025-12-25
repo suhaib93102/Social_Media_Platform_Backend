@@ -199,15 +199,13 @@ def handle_otp(identifier, is_email, app_mode, debug, force_sendmator=False, ski
             "sendmator_used": False
         }
     
-    # DEBUG → Return fixed test OTP for easy testing
+    # DEBUG → Skip OTP and create user directly (no OTP verification needed)
     if debug:
         return {
-            "show_otp": True,
-            "otp": "123456",
-            "otp_for_storage": "123456",
+            "show_otp": False,
+            "otp": None,
             "session_token": None,
             "sendmator_used": False,
-            "email_sent": False,
             "debug_mode": True
         }
     
@@ -429,8 +427,8 @@ class SignupView(APIView):
     }
     
     Debug Mode Behavior:
-    - x-debug: 'true' → Returns fixed test OTP (123456) for easy testing, no real SMS/Email sent
-    - x-debug: 'false' or not set → Sends real OTP via SMS/Email
+    - x-debug: 'true' → Creates user profile directly without OTP verification
+    - x-debug: 'false' or not set → Sends real OTP via SMS/Email for verification
     """
     def post(self, request):
         # Get and validate headers
@@ -575,10 +573,8 @@ class SignupView(APIView):
                 debug_mode = otp_result.get('debug_mode', False)
                 
                 response_data = {
-                    'show_otp': otp_result.get("show_otp", True),
-                    'message': 'Test OTP: 123456 (Debug Mode)' if debug_mode else ('OTP sent via Sendmator' if sendmator_used else 'OTP sent successfully'),
-                    'identifier': identifier,
-                    'sendmator': sendmator_used
+                    'message': 'OTP sent successfully',
+                    'identifier': identifier
                 }
                 
                 # Include OTP in sandbox/staging/debug mode or if email failed
