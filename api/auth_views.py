@@ -539,19 +539,11 @@ class SignupView(APIView):
             print(f"{'='*60}\n")
             return Response({'error': f'OTP service error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        # If OTP is required, store it and return
         if otp_result.get("otp_for_storage") or otp_result.get("session_token"):
-            # ... existing OTP storage code ...
             try:
-                # Delete old OTP codes for this identifier
                 OTPVerification.objects.filter(identifier=identifier).delete()
-                
-                # Create new OTP record with 10-minute expiry (Sendmator default)
                 expires_at = timezone.now() + timedelta(minutes=10)
                 
-                # Store OTP code - use otp_for_storage which always has the OTP value
-                # In sandbox mode: otp_for_storage contains the OTP (same as otp)
-                # In production mode: otp_for_storage contains the OTP (otp is None for security)
                 otp_code = otp_result.get("otp_for_storage") or otp_result.get("otp") or "000000"
                 session_token = otp_result.get("session_token")
                 
@@ -562,7 +554,6 @@ class SignupView(APIView):
                     session_token=session_token
                 )
                 
-                # For development/debugging: Print OTP to console
                 if otp_result.get("otp"):
                     print(f"\n{'🔑 '*30}")
                     print(f"OTP FOR {identifier}: {otp_result['otp']}")
@@ -577,11 +568,9 @@ class SignupView(APIView):
                     'identifier': identifier
                 }
                 
-                # Include OTP in sandbox/staging/debug mode or if email failed
                 if otp_result.get("otp"):
                     response_data['otp'] = otp_result['otp']
                 
-                # If debug mode, add note
                 if debug_mode:
                     response_data['note'] = 'Debug mode enabled: Use OTP 123456 for verification'
                 # If Sendmator failed or email failed to send (but not in debug mode)
@@ -1007,10 +996,8 @@ class ResendOTPView(APIView):
         sendmator_used = otp_result.get('sendmator_used', False)
 
         response = {
-            'show_otp': otp_result.get('show_otp', True),
-            'message': 'OTP resent via Sendmator' if sendmator_used else ('OTP resent' if not debug else 'Debug mode - no OTP sent'),
-            'identifier': identifier,
-            'sendmator': sendmator_used
+            'message': 'OTP resent successfully',
+            'identifier': identifier
         }
 
         # For staging or debug, include OTP for QA convenience
