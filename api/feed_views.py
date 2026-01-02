@@ -260,97 +260,151 @@ class HomeFeedView(APIView):
         """
         Build POST_CARD_SNIPPET_TYPE_1 snippet structure
         
-        Structure:
-        - top_container (author info, badge, timestamp)
-        - middle_container (image, caption)
-        - bottom_container (actions, engagement counts)
+        New Structure:
+        - top_container (left: avatar/title/badge/meta_row, right: menu_icon)
+        - middle_container (image only)
+        - bottom_container (caption, actions_row)
         """
         
-        # Calculate aspect ratio from location data if available
+        from django.utils import timezone
+        import math
+        
+        # Calculate time ago
+        now = timezone.now()
+        time_diff = now - post.timestamp
+        hours_ago = time_diff.total_seconds() / 3600
+        
+        if hours_ago < 1:
+            time_text = f"{int(time_diff.total_seconds() / 60)}m"
+        elif hours_ago < 24:
+            time_text = f"{int(hours_ago)}h"
+        else:
+            days_ago = int(hours_ago / 24)
+            time_text = f"{days_ago}d"
+        
+        # Calculate aspect ratio
         aspect_ratio = 1.0  # Default square
         try:
             if post.location and isinstance(post.location, dict):
-                # Placeholder - actual ratio should come from media metadata
-                aspect_ratio = 1.0
+                # For now, assume 4:3 aspect ratio for images
+                aspect_ratio = 1.333
         except:
             aspect_ratio = 1.0
         
-        # Truncate caption if too long
-        max_caption_length = 200
-        caption = post.description or ""
-        is_truncated = len(caption) > max_caption_length
-        if is_truncated:
-            caption = caption[:max_caption_length] + "..."
-        
-        # Determine if current user can edit this post
-        can_edit = current_user.userId == post.userId
-        
-        # Badge logic (e.g., verified badge, location badge)
+        # Badge logic - Local Expert for verified users or location-based
         badge = None
-        if author.idCardUrl:  # Assuming verified users have ID card
+        if author.idCardUrl:  # Verified user
             badge = {
-                'type': 'verified',
-                'icon': '✓'
+                "text": "Verified",
+                "style": {
+                    "radius": 10,
+                    "backgroundColor": "#FFE7E7",
+                    "textColor": "#B00020",
+                    "fontSize": 10,
+                    "fontWeight": "700"
+                }
+            }
+        elif post.pincode == current_user.pincode:  # Local user
+            badge = {
+                "text": "Local",
+                "style": {
+                    "radius": 10,
+                    "backgroundColor": "#E7F3FF",
+                    "textColor": "#0066CC",
+                    "fontSize": 10,
+                    "fontWeight": "700"
+                }
             }
         
-        # Get engagement counts safely
-        likes_count = getattr(post, 'likes_count', 0)
-        comments_count = getattr(post, 'comments_count', 0)
-        saves_count = getattr(post, 'saves_count', 0)
-        
-        # Build snippet
+        # Build snippet with new structure
         snippet = {
             'top_container': {
-                'author': {
-                    'user_id': author.userId,
-                    'name': author.name or 'User',
-                    'avatar': author.profilePhoto or 'https://via.placeholder.com/150',
-                    'is_verified': badge is not None
+                'left': {
+                    'avatar': {
+                        'url': author.profilePhoto or 'https://i.pravatar.cc/150?img=5',
+                        'width': 72,
+                        'height': 72,
+                        'aspectRatio': 1,
+                        'style': {'size': 36, 'radius': 18}
+                    },
+                    'title': {
+                        'text': author.name or 'User',
+                        'style': {'fontSize': 14, 'fontWeight': '700', 'color': '#111111'}
+                    },
+                    'badge': badge,
+                    'meta_row': {
+                        'icon': {'name': 'location-outline', 'size': 14, 'color': '#111111'},
+                        'text': {'text': post.pincode or 'Unknown', 'style': {'fontSize': 11, 'color': '#111111', 'opacity': 0.6}},
+                        'separator': {'text': '•', 'style': {'fontSize': 11, 'color': '#111111', 'opacity': 0.6}},
+                        'time': {'text': time_text, 'style': {'fontSize': 11, 'color': '#111111', 'opacity': 0.6}},
+                        'gap': 6
+                    }
                 },
-                'badge': badge,
-                'timestamp': post.timestamp.isoformat(),
-                'location': {
-                    'pincode': post.pincode,
-                    'city': None,  # Could be resolved from pincode if needed
-                    'state': None
+                'right': {
+                    'menu_icon': {
+                        'name': 'ellipsis-vertical',
+                        'size': 18,
+                        'color': '#111111'
+                    }
                 }
             },
             'middle_container': {
-                'media': {
-                    'type': post.mediaType,
+                'image': {
                     'url': post.mediaURL,
-                    'aspect_ratio': aspect_ratio,
-                    'thumbnail_url': post.mediaURL  # Same as main for now
-                },
-                'caption': {
-                    'text': caption,
-                    'is_truncated': is_truncated,
-                    'full_text': post.description or ""
+                    'width': 1200,
+                    'height': 800,
+                    'aspectRatio': aspect_ratio,
+                    'style': {'radius': 0, 'resizeMode': 'cover'}
                 }
             },
             'bottom_container': {
-                'engagement': {
-                    'likes_count': likes_count,
-                    'comments_count': comments_count,
-                    'saves_count': saves_count
+                'caption': {
+                    'text': post.description or '',
+                    'style': {'fontSize': 12.5, 'lineHeight': 18, 'color': '#111111', 'opacity': 0.85},
+                    'truncate': {
+                        'enabled': True,
+                        'maxChars': 80,
+                        'moreText': 'Read More…',
+                        'lessText': 'Read less',
+                        'style': {'fontWeight': '700', 'opacity': 0.7, 'color': '#B00020'}
+                    }
                 },
-                'actions': {
-                    'can_like': True,
-                    'can_comment': True,
-                    'can_save': True,
-                    'can_share': True,
-                    'can_edit': can_edit,
-                    'can_report': not can_edit
-                },
-                'user_state': {
-                    'is_liked': is_liked,
-                    'is_saved': is_saved
+                'actions_row': {
+                    'left_actions': [
+                        {
+                            'id': 'like',
+                            'icon': {
+                                'name': 'heart-outline',
+                                'activeName': 'heart',
+                                'size': 22,
+                                'color': '#111111',
+                                'activeColor': '#E11D48'
+                            },
+                            'active': is_liked
+                        },
+                        {
+                            'id': 'comment',
+                            'icon': {'name': 'chatbubble-outline', 'size': 21, 'color': '#111111'}
+                        },
+                        {
+                            'id': 'share',
+                            'icon': {'name': 'paper-plane-outline', 'size': 21, 'color': '#111111'}
+                        }
+                    ],
+                    'right_actions': [
+                        {
+                            'id': 'save',
+                            'icon': {
+                                'name': 'bookmark-outline',
+                                'activeName': 'bookmark',
+                                'size': 21,
+                                'color': '#111111',
+                                'activeColor': '#111111'
+                            },
+                            'active': is_saved
+                        }
+                    ]
                 }
-            },
-            'meta': {
-                'post_id': post.postId,
-                'author_id': post.userId,
-                'created_at': post.timestamp.isoformat()
             }
         }
         
