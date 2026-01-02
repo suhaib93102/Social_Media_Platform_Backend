@@ -322,6 +322,16 @@ class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
     lookup_field = 'postId'
+    
+    def get_permissions(self):
+        """Require authentication for creating posts"""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated()]
+        return []
+    
+    def perform_create(self, serializer):
+        """Set the userId from the authenticated user when creating a post"""
+        serializer.save(userId=self.request.user.userId)
 
 
 class UserPostsView(APIView):

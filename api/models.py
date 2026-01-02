@@ -280,3 +280,99 @@ class Message(models.Model):
     def __str__(self):
         return f"Message {self.messageId} in Chat {self.chatId}"
 
+
+class PostLike(models.Model):
+    """Model for post likes"""
+    likeId = models.AutoField(primary_key=True)
+    postId = models.IntegerField(db_index=True)
+    userId = models.CharField(max_length=255, db_index=True)
+    createdAt = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'post_likes'
+        unique_together = ['postId', 'userId']
+        ordering = ['-createdAt']
+
+    def __str__(self):
+        return f"{self.userId} liked Post {self.postId}"
+
+
+class PostSave(models.Model):
+    """Model for saved/bookmarked posts"""
+    saveId = models.AutoField(primary_key=True)
+    postId = models.IntegerField(db_index=True)
+    userId = models.CharField(max_length=255, db_index=True)
+    createdAt = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'post_saves'
+        unique_together = ['postId', 'userId']
+        ordering = ['-createdAt']
+
+    def __str__(self):
+        return f"{self.userId} saved Post {self.postId}"
+
+
+class PostComment(models.Model):
+    """Model for post comments"""
+    commentId = models.AutoField(primary_key=True)
+    postId = models.IntegerField(db_index=True)
+    userId = models.CharField(max_length=255, db_index=True)
+    content = models.TextField()
+    createdAt = models.DateTimeField(auto_now_add=True)
+    parentCommentId = models.IntegerField(null=True, blank=True)  # For nested comments
+
+    class Meta:
+        db_table = 'post_comments'
+        ordering = ['-createdAt']
+
+    def __str__(self):
+        return f"Comment {self.commentId} on Post {self.postId}"
+
+
+class BlockedUser(models.Model):
+    """Model for blocked users"""
+    blockId = models.AutoField(primary_key=True)
+    blockerUserId = models.CharField(max_length=255, db_index=True)
+    blockedUserId = models.CharField(max_length=255, db_index=True)
+    createdAt = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'blocked_users'
+        unique_together = ['blockerUserId', 'blockedUserId']
+        ordering = ['-createdAt']
+
+    def __str__(self):
+        return f"{self.blockerUserId} blocked {self.blockedUserId}"
+
+
+class ReportedContent(models.Model):
+    """Model for reported posts/users"""
+    CONTENT_TYPE_CHOICES = [
+        ('post', 'Post'),
+        ('user', 'User'),
+        ('comment', 'Comment'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('reviewed', 'Reviewed'),
+        ('action_taken', 'Action Taken'),
+        ('dismissed', 'Dismissed'),
+    ]
+    
+    reportId = models.AutoField(primary_key=True)
+    reporterUserId = models.CharField(max_length=255, db_index=True)
+    contentType = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES)
+    contentId = models.IntegerField(db_index=True)
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    createdAt = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'reported_content'
+        ordering = ['-createdAt']
+
+    def __str__(self):
+        return f"Report {self.reportId} - {self.contentType} {self.contentId}"
+

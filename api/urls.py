@@ -14,6 +14,7 @@ from .auth_views import (
     VerifyOTPView, SaveInterestsView, AppInitView, ResendOTPView, DebugGetOTPView
 )
 from .auth_views import InternalCheckSMTPView
+from .feed_views import HomeFeedView
 
 # Create router for ViewSets
 router = DefaultRouter()
@@ -50,6 +51,9 @@ urlpatterns = [
     path('login/guest/', GuestLoginView.as_view(), name='guest-login'),
     path('setup-profile/', SetupProfileView.as_view(), name='setup-profile'),
     path('get-feed/', GetFeedView.as_view(), name='get-feed'),
+    
+    # Home Feed endpoint
+    path('home-feed/', HomeFeedView.as_view(), name='home-feed'),
     
     # Router URLs
     path('', include(router.urls)),

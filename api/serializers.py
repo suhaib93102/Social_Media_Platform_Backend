@@ -81,7 +81,7 @@ class PostSerializer(serializers.ModelSerializer):
             'postId', 'description', 'mediaType', 'mediaURL', 
             'pincode', 'timestamp', 'userId', 'location'
         ]
-        read_only_fields = ['postId', 'timestamp']
+        read_only_fields = ['postId', 'timestamp', 'userId']
     
     def create(self, validated_data):
         location_data = validated_data.pop('location', {})
