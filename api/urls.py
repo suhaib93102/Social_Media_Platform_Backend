@@ -14,7 +14,7 @@ from .auth_views import (
     VerifyOTPView, SaveInterestsView, AppInitView, ResendOTPView, DebugGetOTPView
 )
 from .auth_views import InternalCheckSMTPView
-from .feed_views import HomeFeedView
+from .feed_views import HomeFeedView, CreatePostView, SavePostView
 
 # Create router for ViewSets
 router = DefaultRouter()
@@ -54,6 +54,10 @@ urlpatterns = [
     
     # Home Feed endpoint
     path('home-feed/', HomeFeedView.as_view(), name='home-feed'),
+    
+    # Create Post endpoints
+    path('create-post/', CreatePostView.as_view(), name='create-post'),
+    path('save-post/', SavePostView.as_view(), name='save-post'),
     
     # Router URLs
     path('', include(router.urls)),

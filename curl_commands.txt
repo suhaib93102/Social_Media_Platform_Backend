@@ -1,0 +1,51 @@
+# Individual Curl Commands for Testing API Endpoints
+# Make sure Django server is running: python manage.py runserver 8000
+
+# 1. Test Create Post Screen (GET /create-post/)
+# Returns the UI schema for create post screen
+curl -X GET "http://127.0.0.1:8000/api/create-post/" \
+  -H "Content-Type: application/json" | jq '.results[0].type'
+
+# 2. Test Home Feed (POST /home-feed/)
+# Returns the exact form structure from expect.json
+curl -X POST "http://127.0.0.1:8000/api/home-feed/" \
+  -H "Content-Type: application/json" \
+  -d '{"page_id": 0, "limit": 10}' | jq '.results[0].type'
+
+# 3. Login to get authentication token (POST /auth/login/)
+# Replace with valid credentials
+curl -X POST "http://127.0.0.1:8000/api/auth/login/" \
+  -H "Content-Type: application/json" \
+  -d '{"email_id": "test@example.com", "password": "password123"}' | jq '.tokens.access'
+
+# 4. Save Post (POST /save-post/) - Requires authentication
+# Replace YOUR_ACCESS_TOKEN with the token from step 3
+curl -X POST "http://127.0.0.1:8000/api/save-post/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "post_type": "post",
+    "content": "This is a test post from curl!",
+    "pincode_id": "pincode_home_201301"
+  }' | jq '.message'
+
+# Alternative: Save Post with Question type
+curl -X POST "http://127.0.0.1:8000/api/save-post/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "post_type": "question",
+    "content": "What is the best way to learn Django?",
+    "pincode_id": "pincode_home_201301"
+  }' | jq '.message'
+
+# Alternative: Save Post with Photo
+curl -X POST "http://127.0.0.1:8000/api/save-post/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "post_type": "post",
+    "content": "Check out this amazing view!",
+    "pincode_id": "pincode_home_201301",
+    "photo_url": "https://picsum.photos/800/600"
+  }' | jq '.message'
