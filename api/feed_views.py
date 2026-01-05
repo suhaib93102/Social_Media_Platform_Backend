@@ -224,13 +224,13 @@ class HomeFeedView(APIView):
 
 class CreatePostView(APIView):
     """
-    GET /create-post
+    PUT /create-post
 
     Returns the UI schema for the create post screen
     Requires authentication
     """
 
-    def get(self, request):
+    def put(self, request):
         """
         Return the exact structure from expect.json
         Requires authentication
