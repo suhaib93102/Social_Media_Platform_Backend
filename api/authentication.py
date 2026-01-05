@@ -4,7 +4,6 @@ from .models import UserProfile
 
 class UserProfileJWTAuthentication(JWTAuthentication):
     """Custom JWT authentication that maps token to UserProfile instead of default Django User model"""
-
     user_id_claim = 'user_id'  # Set the claim name
 
     def get_user(self, validated_token):

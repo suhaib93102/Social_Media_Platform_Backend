@@ -204,7 +204,15 @@ class Post(models.Model):
         ('video', 'Video'),
     ]
     
+    POST_TYPE_CHOICES = [
+        ('post', 'Post'),
+        ('question', 'Question'),
+        ('alert', 'Alert'),
+        ('recommendation', 'Recommendation'),
+    ]
+    
     postId = models.AutoField(primary_key=True)
+    post_type = models.CharField(max_length=20, choices=POST_TYPE_CHOICES, default='post')
     description = models.TextField(blank=True, null=True)
     mediaType = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES)
     mediaURL = models.URLField()

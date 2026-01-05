@@ -78,7 +78,7 @@ class PostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'postId', 'description', 'mediaType', 'mediaURL', 
+            'postId', 'post_type', 'description', 'mediaType', 'mediaURL', 
             'pincode', 'timestamp', 'userId', 'location'
         ]
         read_only_fields = ['postId', 'timestamp', 'userId']
