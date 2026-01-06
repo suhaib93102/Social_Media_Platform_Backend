@@ -832,30 +832,27 @@ class CreatePostView(APIView):
                 media_url = 'https://via.placeholder.com/1x1/ffffff/ffffff'  # Placeholder for text posts
 
             # Update user's PIN codes if necessary
-            # When a user creates a post with a specific pincode_id (e.g., pincode_home_560001),
+            # When a user creates a post with a specific pincode,
             # automatically add that PIN code to their profile so they can see their own posts
-            try:
-                pincode_parts = pincode_id.split('_')
-                if len(pincode_parts) >= 3 and pincode_parts[0] == 'pincode':
-                    pincode_type = pincode_parts[1]  # 'home', 'office', etc.
-                    
-                    # Update the appropriate PIN code field in user profile
-                    if pincode_type == 'home' and not current_user.home_pincode:
-                        current_user.home_pincode = pincode
-                        current_user.save()
-                    elif pincode_type == 'office' and not current_user.office_pincode:
-                        current_user.office_pincode = pincode
-                        current_user.save()
-                    elif pincode_type not in ['home', 'office']:
-                        # For other types or if no specific type, add to additional_pincodes if not already there
-                        if pincode not in (current_user.additional_pincodes or []):
-                            additional = list(current_user.additional_pincodes or [])
-                            additional.append(pincode)
-                            current_user.additional_pincodes = additional
-                            current_user.save()
-            except (IndexError, AttributeError):
-                # If pincode_id parsing fails, continue without updating profile
-                pass
+            user_pincodes = []
+            if current_user.pincode:
+                user_pincodes.append(current_user.pincode)
+            if current_user.home_pincode:
+                user_pincodes.append(current_user.home_pincode)
+            if current_user.office_pincode:
+                user_pincodes.append(current_user.office_pincode)
+            if current_user.activePincodes:
+                user_pincodes.extend(current_user.activePincodes)
+            if current_user.additional_pincodes:
+                user_pincodes.extend(current_user.additional_pincodes)
+            user_pincodes = list(set(user_pincodes))  # Remove duplicates
+            
+            if pincode not in user_pincodes:
+                # Add the pincode to additional_pincodes so the user can see their post
+                additional = list(current_user.additional_pincodes or [])
+                additional.append(pincode)
+                current_user.additional_pincodes = additional
+                current_user.save()
 
 
             # Create the post
