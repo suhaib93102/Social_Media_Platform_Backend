@@ -847,6 +847,16 @@ class CreatePostView(APIView):
                 media_type = 'image'  # Default to image type
                 media_url = 'https://via.placeholder.com/1x1/ffffff/ffffff'  # Placeholder for text posts
 
+            # Create the post
+            post = Post.objects.create(
+                userId=user_id,
+                post_type=post_type,
+                description=content,
+                mediaType=media_type,
+                mediaURL=media_url,
+                pincode=pincode,
+                location={}  # Empty location object for now
+            )
 
             return Response({
                 'entities': {
