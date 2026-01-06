@@ -831,33 +831,6 @@ class CreatePostView(APIView):
                 media_type = 'image'  # Default to image type
                 media_url = 'https://via.placeholder.com/1x1/ffffff/ffffff'  # Placeholder for text posts
 
-            # Update user's PIN codes if necessary
-            # When a user creates a post with a specific pincode_id (e.g., pincode_home_560001),
-            # automatically add that PIN code to their profile so they can see their own posts
-            try:
-                pincode_parts = pincode_id.split('_')
-                if len(pincode_parts) >= 3 and pincode_parts[0] == 'pincode':
-                    pincode_type = pincode_parts[1]  # 'home', 'office', etc.
-                    
-                    # Update the appropriate PIN code field in user profile
-                    if pincode_type == 'home' and not current_user.home_pincode:
-                        current_user.home_pincode = pincode
-                        current_user.save()
-                    elif pincode_type == 'office' and not current_user.office_pincode:
-                        current_user.office_pincode = pincode
-                        current_user.save()
-                    elif pincode_type not in ['home', 'office']:
-                        # For other types or if no specific type, add to additional_pincodes if not already there
-                        if pincode not in (current_user.additional_pincodes or []):
-                            additional = list(current_user.additional_pincodes or [])
-                            additional.append(pincode)
-                            current_user.additional_pincodes = additional
-                            current_user.save()
-            except (IndexError, AttributeError):
-                # If pincode_id parsing fails, continue without updating profile
-                pass
-
-
             # Create the post
             post = Post.objects.create(
                 userId=user_id,
