@@ -165,13 +165,8 @@ class HomeFeedView(APIView):
 
     def post(self, request):
         """
-        Return home feed based on PIN codes from user profile:
-        - Authenticated user with PIN codes in profile: PIN-scoped personal feed (sees posts from all their PIN codes)
-        - Authenticated user without PIN codes in profile: Random/exploratory feed
-        
-        PIN Codes = Feed Namespaces (shared feed rooms/content visibility scopes)
-        Authentication token is the ONLY input. PIN codes are fetched from DB and used ONLY for feed recommendation/matching.
-        No extra client responsibility - PIN codes are managed server-side.
+        Return home feed with all posts
+        Authentication required
         """
         # Authentication is ALWAYS required
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
@@ -201,23 +196,6 @@ class HomeFeedView(APIView):
         page_id = request.data.get('page_id', '')
         limit = request.data.get('limit', 10)
         
-        # PIN codes are fetched from authenticated user's profile (stored in DB)
-        # Users can have multiple PIN codes (main, home, office, active, additional)
-        user_pincodes = []
-        if current_user.pincode:
-            user_pincodes.append(current_user.pincode)
-        if current_user.home_pincode:
-            user_pincodes.append(current_user.home_pincode)
-        if current_user.office_pincode:
-            user_pincodes.append(current_user.office_pincode)
-        if current_user.activePincodes:
-            user_pincodes.extend(current_user.activePincodes)
-        if current_user.additional_pincodes:
-            user_pincodes.extend(current_user.additional_pincodes)
-        
-        # Remove duplicates
-        user_pincodes = list(set(user_pincodes))
-        
         try:
             limit = int(limit)
             if limit < 1 or limit > 50:
@@ -225,14 +203,44 @@ class HomeFeedView(APIView):
         except (ValueError, TypeError):
             limit = 10
         
-        # Determine feed type based on user's PIN codes
-        if user_pincodes:
-            # A. Authenticated user with PIN codes: PIN-scoped personal feed
-            # Users see posts from any of their associated PIN codes (multiple shared feed rooms)
-            posts = self._get_pin_scoped_feed(current_user, user_pincodes, filters, page_id, limit)
-        else:
-            # B. Authenticated user with no PIN codes: Random/exploratory feed
-            posts = self._get_random_exploratory_feed(current_user, filters, page_id, limit)
+        # Get all posts
+        posts_query = Post.objects.all()
+        
+        # Apply filters if provided
+        if filters:
+            filter_mapping = {
+                'all': [],  # No filtering - show all post types
+                'posts': ['post'],  # Regular posts
+                'people': ['post'],  # People-related posts (could be expanded)
+                'business': ['post', 'recommendation'],  # Business posts and recommendations
+                'questions': ['question'],  # Question posts
+                'alerts': ['alert'],  # Alert posts
+                'recommendations': ['recommendation'],  # Recommendation posts
+                # Legacy filter names (for backward compatibility)
+                'entertainment': ['post'],
+                'sports': ['post']
+            }
+            
+            post_types = []
+            for filter_name in filters:
+                if filter_name in filter_mapping:
+                    mapped_types = filter_mapping[filter_name]
+                    if mapped_types:  # Only add if not empty (empty means 'all')
+                        post_types.extend(mapped_types)
+            
+            # If we have specific post types to filter by, apply the filter
+            if post_types:
+                posts_query = posts_query.filter(post_type__in=post_types)
+        
+        # Apply pagination
+        if page_id:
+            try:
+                start_post = Post.objects.get(postId=int(page_id))
+                posts_query = posts_query.filter(timestamp__lt=start_post.timestamp)
+            except (Post.DoesNotExist, ValueError):
+                pass
+        
+        posts = posts_query.order_by('-timestamp')[:limit]
         
         # Determine if there are more posts available
         has_more = len(posts) == limit
@@ -334,7 +342,7 @@ class HomeFeedView(APIView):
                             "color": "#2B1B3F"
                         },
                         "primary": {
-                            "text": user_pincodes[0] if user_pincodes else "202024",  # Show first PIN if available
+                            "text": current_user.home_pincode or current_user.pincode or "202024",
                             "style": {
                                 "fontSize": 16,
                                 "fontWeight": "600",
@@ -831,39 +839,6 @@ class CreatePostView(APIView):
                 media_type = 'image'  # Default to image type
                 media_url = 'https://via.placeholder.com/1x1/ffffff/ffffff'  # Placeholder for text posts
 
-            # Update user's PIN codes if necessary
-            # When a user creates a post with a specific pincode,
-            # automatically add that PIN code to their profile so they can see their own posts
-            user_pincodes = []
-            if current_user.pincode:
-                user_pincodes.append(current_user.pincode)
-            if current_user.home_pincode:
-                user_pincodes.append(current_user.home_pincode)
-            if current_user.office_pincode:
-                user_pincodes.append(current_user.office_pincode)
-            if current_user.activePincodes:
-                user_pincodes.extend(current_user.activePincodes)
-            if current_user.additional_pincodes:
-                user_pincodes.extend(current_user.additional_pincodes)
-            user_pincodes = list(set(user_pincodes))  # Remove duplicates
-            
-            if pincode not in user_pincodes:
-                # Add the pincode to additional_pincodes so the user can see their post
-                additional = list(current_user.additional_pincodes or [])
-                additional.append(pincode)
-                current_user.additional_pincodes = additional
-                current_user.save()
-
-
-            # Create the post
-            post = Post.objects.create(
-                userId=user_id,
-                post_type=post_type,                description=content,
-                mediaType=media_type,
-                mediaURL=media_url,
-                pincode=pincode,
-                location={}  # Empty location object for now
-            )
 
             return Response({
                 'entities': {
