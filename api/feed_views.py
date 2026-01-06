@@ -245,6 +245,9 @@ class HomeFeedView(APIView):
         # Determine if there are more posts available
         has_more = len(posts) == limit
         
+        # Debug info
+        total_posts = posts_query.count()
+        
         # Format posts for the feed
         feed_posts = []
         for post in posts:
@@ -494,7 +497,12 @@ class HomeFeedView(APIView):
         return Response({
             'results': feed_posts,
             'has_more': has_more,
-            'header': header
+            'header': header,
+            'debug': {
+                'total_user_posts': total_posts,
+                'returned_posts': len(feed_posts),
+                'user_id': current_user.userId
+            }
         }, status=status.HTTP_200_OK)
 
 class CreatePostView(APIView):
