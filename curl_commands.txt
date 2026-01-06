@@ -49,3 +49,8 @@ curl -X POST "http://127.0.0.1:8000/api/save-post/" \
     "pincode_id": "pincode_home_201301",
     "photo_url": "https://picsum.photos/800/600"
   }' | jq '.message'
+
+
+
+
+  

@@ -214,22 +214,79 @@ class HomeFeedView(APIView):
             try:
                 post_user = UserProfile.objects.get(userId=post.userId)
                 author_name = post_user.name or f"User {post.userId[:8]}"
+                author_avatar = post_user.profilePhoto or "https://i.pravatar.cc/150?img=33"
             except UserProfile.DoesNotExist:
                 author_name = f"User {post.userId[:8]}"
+                author_avatar = "https://i.pravatar.cc/150?img=33"
+            
+            # Calculate time ago
+            from django.utils import timezone
+            time_diff = timezone.now() - post.timestamp
+            if time_diff.days > 0:
+                time_ago = f"{time_diff.days}d"
+            elif time_diff.seconds // 3600 > 0:
+                time_ago = f"{time_diff.seconds // 3600}hr"
+            elif time_diff.seconds // 60 > 0:
+                time_ago = f"{time_diff.seconds // 60}min"
+            else:
+                time_ago = "now"
             
             feed_posts.append({
-                'postId': post.postId,
-                'post_type': post.post_type,
-                'author': {
-                    'userId': post.userId,
-                    'name': author_name
-                },
-                'content': post.description or '',
-                'mediaType': post.mediaType,
-                'mediaURL': post.mediaURL,
-                'pincode': post.pincode,
-                'timestamp': post.timestamp.isoformat(),
-                'location': post.location or {}
+                "type": "POST_CARD_SNIPPET_TYPE_1",
+                "post_card_snippet_type_1": {
+                    "top_container": {
+                        "left": {
+                            "avatar": {
+                                "url": author_avatar,
+                                "width": 72,
+                                "height": 72,
+                                "aspectRatio": 1,
+                                "style": {"size": 36, "radius": 18}
+                            },
+                            "title": {
+                                "text": author_name,
+                                "style": {"fontSize": 14, "fontWeight": "700", "color": "#111111"}
+                            },
+                            "badge": {
+                                "text": "Local Expert",
+                                "style": {"radius": 10, "backgroundColor": "#FFE7E7", "textColor": "#B00020", "fontSize": 10, "fontWeight": "700"}
+                            },
+                            "meta_row": {
+                                "icon": {"name": "location-outline", "size": 14, "color": "#111111"},
+                                "text": {"text": post.pincode, "style": {"fontSize": 11, "color": "#111111", "opacity": 0.6}},
+                                "separator": {"text": "•", "style": {"fontSize": 11, "color": "#111111", "opacity": 0.6}},
+                                "time": {"text": time_ago, "style": {"fontSize": 11, "color": "#111111", "opacity": 0.6}},
+                                "gap": 6
+                            }
+                        },
+                        "right": {"menu_icon": {"name": "ellipsis-vertical", "size": 18, "color": "#111111"}}
+                    },
+                    "middle_container": {
+                        "image": {
+                            "url": post.mediaURL,
+                            "width": 1200,
+                            "height": 800,
+                            "aspectRatio": 1.5,
+                            "style": {"radius": 0, "resizeMode": "cover"}
+                        }
+                    },
+                    "bottom_container": {
+                        "caption": {
+                            "text": post.description or '',
+                            "style": {"fontSize": 12.5, "lineHeight": 18, "color": "#111111", "opacity": 0.85}
+                        },
+                        "actions_row": {
+                            "left_actions": [
+                                {"id": "like", "icon": {"name": "heart-outline", "activeName": "heart", "size": 22, "color": "#111111", "activeColor": "#E11D48"}, "active": False},
+                                {"id": "comment", "icon": {"name": "chatbubble-outline", "size": 21, "color": "#111111"}},
+                                {"id": "share", "icon": {"name": "paper-plane-outline", "size": 21, "color": "#111111"}}
+                            ],
+                            "right_actions": [
+                                {"id": "save", "icon": {"name": "bookmark-outline", "activeName": "bookmark", "size": 21, "color": "#111111", "activeColor": "#111111"}, "active": False}
+                            ]
+                        }
+                    }
+                }
             })
         
         # Home screen header structure
