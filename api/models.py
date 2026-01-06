@@ -217,7 +217,7 @@ class Post(models.Model):
     mediaType = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES)
     mediaURL = models.URLField()
     pincode = models.CharField(max_length=10, blank=True, null=True)
-    timestamp = models.DateTimeField(auto_now_add=True)
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
     userId = models.CharField(max_length=255)
     
     # Location fields stored as JSON

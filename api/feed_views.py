@@ -494,7 +494,8 @@ class HomeFeedView(APIView):
         return Response({
             'results': feed_posts,
             'has_more': has_more,
-            'header': header
+            'header': header,
+            'version': 'no_pincode_filter_v1'
         }, status=status.HTTP_200_OK)
 
 class CreatePostView(APIView):
