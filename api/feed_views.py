@@ -203,8 +203,8 @@ class HomeFeedView(APIView):
         except (ValueError, TypeError):
             limit = 10
         
-        # Get all posts
-        posts_query = Post.objects.all()
+        # Get user's own posts
+        posts_query = Post.objects.filter(userId=current_user.userId)
         
         # Apply filters if provided
         if filters:
@@ -494,8 +494,7 @@ class HomeFeedView(APIView):
         return Response({
             'results': feed_posts,
             'has_more': has_more,
-            'header': header,
-            'version': 'no_pincode_filter_v1'
+            'header': header
         }, status=status.HTTP_200_OK)
 
 class CreatePostView(APIView):
