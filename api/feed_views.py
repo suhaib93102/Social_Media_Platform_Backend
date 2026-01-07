@@ -203,8 +203,17 @@ class HomeFeedView(APIView):
         except (ValueError, TypeError):
             limit = 10
         
-        # Get user's own posts
-        posts_query = Post.objects.filter(userId=current_user.userId)
+        # Get posts from users with the same pincode (shared feed)
+        user_pincode = current_user.home_pincode or current_user.pincode
+        if not user_pincode:
+            return Response({
+                'error': {
+                    'code': 'NO_PINCODE',
+                    'message': 'User must have a pincode to view posts'
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        posts_query = Post.objects.filter(pincode=user_pincode)
         
         # Apply filters if provided
         if filters:
@@ -499,9 +508,10 @@ class HomeFeedView(APIView):
             'has_more': has_more,
             'header': header,
             'debug': {
-                'total_user_posts': total_posts,
+                'total_pincode_posts': total_posts,
                 'returned_posts': len(feed_posts),
-                'user_id': current_user.userId
+                'user_id': current_user.userId,
+                'pincode': user_pincode
             }
         }, status=status.HTTP_200_OK)
 
