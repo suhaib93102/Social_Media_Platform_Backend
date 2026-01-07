@@ -202,6 +202,7 @@ class Post(models.Model):
     MEDIA_TYPE_CHOICES = [
         ('image', 'Image'),
         ('video', 'Video'),
+        ('text', 'Text'),
     ]
     
     POST_TYPE_CHOICES = [
@@ -215,7 +216,7 @@ class Post(models.Model):
     post_type = models.CharField(max_length=20, choices=POST_TYPE_CHOICES, default='post')
     description = models.TextField(blank=True, null=True)
     mediaType = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES)
-    mediaURL = models.URLField()
+    mediaURL = models.URLField(null=True, blank=True)
     pincode = models.CharField(max_length=10, blank=True, null=True)
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
     userId = models.CharField(max_length=255)

@@ -1036,14 +1036,15 @@ class SavePostView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Step 3: Create the post
+
         try:
-            # Determine media type and URL
-            if photo_url:
+            # Determine media type and URL (match CreatePostView logic)
+            if photo_url and photo_url.strip():
                 media_type = 'image'
-                media_url = photo_url
+                media_url = photo_url.strip()
             else:
-                media_type = 'image'  # Default to image type
-                media_url = 'https://via.placeholder.com/1x1/ffffff/ffffff'  # Placeholder for text posts
+                media_type = 'text'  # Use text for posts without images
+                media_url = None  # No media URL for text posts
 
             # Create the post
             post = Post.objects.create(
