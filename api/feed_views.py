@@ -195,6 +195,7 @@ class HomeFeedView(APIView):
         filters = request.data.get('filters', [])
         page_id = request.data.get('page_id', '')
         limit = request.data.get('limit', 10)
+        pin_code = request.data.get('pin_code')  # Optional pincode override
         
         try:
             limit = int(limit)
@@ -203,15 +204,20 @@ class HomeFeedView(APIView):
         except (ValueError, TypeError):
             limit = 10
         
-        # Get posts from users with the same pincode (shared feed)
-        user_pincode = current_user.home_pincode or current_user.pincode
-        if not user_pincode:
-            return Response({
-                'error': {
-                    'code': 'NO_PINCODE',
-                    'message': 'User must have a pincode to view posts'
-                }
-            }, status=status.HTTP_400_BAD_REQUEST)
+        # Determine pincode to use for filtering
+        if pin_code:
+            # Validate provided pincode
+            if not pin_code.isdigit() or len(pin_code) != 6:
+                return Response({
+                    'error': {
+                        'code': 'INVALID_PINCODE',
+                        'message': 'pin_code must be a valid 6-digit pincode'
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+            user_pincode = pin_code
+        else:
+            # Use user's default pincode or default to 110059
+            user_pincode = current_user.home_pincode or current_user.pincode or "110059"
         
         posts_query = Post.objects.filter(pincode=user_pincode)
         
@@ -354,7 +360,7 @@ class HomeFeedView(APIView):
                             "color": "#2B1B3F"
                         },
                         "primary": {
-                            "text": current_user.home_pincode or current_user.pincode or "202024",
+                            "text": user_pincode,
                             "style": {
                                 "fontSize": 16,
                                 "fontWeight": "600",
@@ -850,12 +856,12 @@ class CreatePostView(APIView):
         # Step 3: Create the post
         try:
             # Determine media type and URL
-            if photo_url:
+            if photo_url and photo_url.strip():
                 media_type = 'image'
-                media_url = photo_url
+                media_url = photo_url.strip()
             else:
-                media_type = 'image'  # Default to image type
-                media_url = 'https://via.placeholder.com/1x1/ffffff/ffffff'  # Placeholder for text posts
+                media_type = 'text'  # Use text for posts without images
+                media_url = None  # No media URL for text posts
 
             # Create the post
             post = Post.objects.create(
@@ -868,20 +874,39 @@ class CreatePostView(APIView):
                 location={}  # Empty location object for now
             )
 
+            # Build dynamic response based on actual saved data
+            response_data = {
+                'post_id': post.postId,
+                'user_id': post.userId,
+                'post_type': post.post_type,
+                'content': post.description,
+                'pincode': post.pincode,
+                'pincode_id': pincode_id,  # Include original pincode_id for reference
+                'timestamp': post.timestamp.isoformat(),
+                'media_type': post.mediaType,
+            }
+
+            # Only include media_url if it exists
+            if post.mediaURL:
+                response_data['media_url'] = post.mediaURL
+
+            # Include original photo_url if provided (for debugging)
+            if photo_url:
+                response_data['original_photo_url'] = photo_url
+
             return Response({
-                'entities': {
-                    'post_type': post_type,
-                    'content': content,
-                    'pincode_id': pincode_id,
-                    'photo_url': photo_url if photo_url else None
-                }
+                'success': True,
+                'message': 'Post created successfully',
+                'data': response_data
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            print(f"Error creating post: {e}")  # Add logging for debugging
             return Response({
                 'error': {
                     'code': 'INTERNAL_ERROR',
-                    'message': 'Failed to create post'
+                    'message': 'Failed to create post',
+                    'details': str(e) if settings.DEBUG else None
                 }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1023,26 +1048,46 @@ class SavePostView(APIView):
             # Create the post
             post = Post.objects.create(
                 userId=user_id,
-                post_type=post_type,                description=content,
+                post_type=post_type,
+                description=content,
                 mediaType=media_type,
                 mediaURL=media_url,
                 pincode=pincode,
                 location={}  # Empty location object for now
             )
 
+            # Build dynamic response based on actual saved data
+            response_data = {
+                'post_id': post.postId,
+                'user_id': post.userId,
+                'post_type': post.post_type,
+                'content': post.description,
+                'pincode': post.pincode,
+                'pincode_id': pincode_id,  # Include original pincode_id for reference
+                'timestamp': post.timestamp.isoformat(),
+                'media_type': post.mediaType,
+            }
+
+            # Only include media_url if it exists
+            if post.mediaURL:
+                response_data['media_url'] = post.mediaURL
+
+            # Include original photo_url if provided (for debugging)
+            if photo_url:
+                response_data['original_photo_url'] = photo_url
+
             return Response({
-                'entities': {
-                    'post_type': post_type,
-                    'content': content,
-                    'pincode_id': pincode_id,
-                    'photo_url': photo_url if photo_url else None
-                }
+                'success': True,
+                'message': 'Post saved successfully',
+                'data': response_data
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            print(f"Error saving post: {e}")  # Add logging for debugging
             return Response({
                 'error': {
                     'code': 'INTERNAL_ERROR',
-                    'message': 'Failed to create post'
+                    'message': 'Failed to save post',
+                    'details': str(e) if settings.DEBUG else None
                 }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
