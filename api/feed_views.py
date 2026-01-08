@@ -8,6 +8,7 @@ from .models import (
     UserProfile, Post, PostLike, PostSave, PostComment, 
     BlockedUser, ReportedContent, Follower
 )
+from .constants import PINCODE_HOME_ID, PINCODE_OFFICE_ID, PINCODE_PREFIX
 import math
 
 
@@ -579,6 +580,11 @@ class CreatePostView(APIView):
         #     }, status=status.HTTP_403_FORBIDDEN)
 
         # Return the exact structure from expect.json
+        user_home_pincode = getattr(current_user, "home_pincode", None)
+        user_work_pincode = getattr(current_user, "office_pincode", None)
+        home_address = _format_address(current_user.home_city, current_user.home_state)
+        work_address = _format_address(current_user.office_city, current_user.office_state)
+        
         return Response({
             "results": [{
                 "type": "CREATE_POST_SCREEN_V1",
@@ -668,10 +674,10 @@ class CreatePostView(APIView):
                             "required": True,
                             "options": [
                                 {
-                                    "id": "pincode_home_201301",
+                                        "id": PINCODE_HOME_ID,
                                     "leftIcon": {"name": "home-outline", "size": 16, "color": "#111"},
                                     "pincodeText": {
-                                        "text": "201301",
+                                        "text": user_home_pincode,
                                         "style": {"fontSize": 16, "fontWeight": "600", "color": "#000000"}
                                     },
                                     "tagText": {
@@ -679,16 +685,16 @@ class CreatePostView(APIView):
                                         "style": {"fontSize": 12, "fontWeight": "600", "color": "#00FF48"}
                                     },
                                     "subtitleText": {
-                                        "text": "Sector 62 Noida",
+                                        "text": home_address,
                                         "style": {"fontSize": 12, "fontWeight": "400", "color": "#9C9C9C"}
                                     },
                                     "selected": True
                                 },
                                 {
-                                    "id": "pincode_office_221512",
+                                    "id": PINCODE_OFFICE_ID,
                                     "leftIcon": {"name": "briefcase-outline", "size": 16, "color": "#111"},
                                     "pincodeText": {
-                                        "text": "221512",
+                                        "text": user_work_pincode,
                                         "style": {"fontSize": 16, "fontWeight": "600", "color": "#000000"}
                                     },
                                     "tagText": {
@@ -696,7 +702,7 @@ class CreatePostView(APIView):
                                         "style": {"fontSize": 12, "fontWeight": "600", "color": "#FF4F9A"}
                                     },
                                     "subtitleText": {
-                                        "text": "Metro Station, Noida",
+                                        "text": work_address,
                                         "style": {"fontSize": 12, "fontWeight": "400", "color": "#9C9C9C"}
                                     }
                                 }
@@ -824,11 +830,12 @@ class CreatePostView(APIView):
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Parse pincode from pincode_id (format: pincode_home_201301 or pincode_office_221512)
+        # Parse pincode_id and ensure it refers to user's home or office pincode
         try:
             pincode_parts = pincode_id.split('_')
-            if len(pincode_parts) >= 3 and pincode_parts[0] == 'pincode':
-                pincode = pincode_parts[-1]  # Last part is the actual pincode
+            if len(pincode_parts) >= 3 and pincode_parts[0] == PINCODE_PREFIX:
+                pincode_type = pincode_parts[1]  # 'home' or 'office'
+                pincode = pincode_parts[-1].strip()
             else:
                 return Response({
                     'error': {
@@ -850,6 +857,47 @@ class CreatePostView(APIView):
                 'error': {
                     'code': 'INVALID_REQUEST',
                     'message': 'Invalid pincode format'
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Ensure pincode_id type (home/office) and that the pincode belongs to the user
+        if pincode_type == 'home':
+            expected = (getattr(current_user, 'home_pincode', None) or getattr(current_user, 'pincode', None))
+            if not expected:
+                return Response({
+                    'error': {
+                        'code': 'INVALID_REQUEST',
+                        'message': 'User has no home pincode set'
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+            if str(expected).strip() != pincode:
+                return Response({
+                    'error': {
+                        'code': 'INVALID_REQUEST',
+                        'message': 'Provided pincode does not match user home pincode'
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+        elif pincode_type == 'office':
+            expected = getattr(current_user, 'office_pincode', None)
+            if not expected:
+                return Response({
+                    'error': {
+                        'code': 'INVALID_REQUEST',
+                        'message': 'User has no office pincode set'
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+            if str(expected).strip() != pincode:
+                return Response({
+                    'error': {
+                        'code': 'INVALID_REQUEST',
+                        'message': 'Provided pincode does not match user office pincode'
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({
+                'error': {
+                    'code': 'INVALID_REQUEST',
+                    'message': 'pincode_id must reference home or office'
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1006,18 +1054,40 @@ class SavePostView(APIView):
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Parse pincode from pincode_id (format: pincode_home_201301 or pincode_office_221512)
+        # pincode_id should be one of the constants (PINCODE_HOME_ID / PINCODE_OFFICE_ID)
+        # If it matches a constant, fetch the actual pincode from the user's profile.
+        # Otherwise, fall back to legacy format `pincode_home_201301` and extract the pincode.
         try:
-            pincode_parts = pincode_id.split('_')
-            if len(pincode_parts) >= 3 and pincode_parts[0] == 'pincode':
-                pincode = pincode_parts[-1]  # Last part is the actual pincode
+            if pincode_id == PINCODE_HOME_ID:
+                pincode = (getattr(current_user, 'home_pincode', None) or getattr(current_user, 'pincode', None))
+                if not pincode:
+                    return Response({
+                        'error': {
+                            'code': 'INVALID_REQUEST',
+                            'message': 'User has no home pincode set'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            elif pincode_id == PINCODE_OFFICE_ID:
+                pincode = getattr(current_user, 'office_pincode', None)
+                if not pincode:
+                    return Response({
+                        'error': {
+                            'code': 'INVALID_REQUEST',
+                            'message': 'User has no office pincode set'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
             else:
-                return Response({
-                    'error': {
-                        'code': 'INVALID_REQUEST',
-                        'message': 'Invalid pincode_id format'
-                    }
-                }, status=status.HTTP_400_BAD_REQUEST)
+                # Legacy support: allow `pincode_home_201301` style ids
+                pincode_parts = pincode_id.split('_')
+                if len(pincode_parts) >= 3 and pincode_parts[0] == PINCODE_PREFIX:
+                    pincode = pincode_parts[-1].strip()
+                else:
+                    return Response({
+                        'error': {
+                            'code': 'INVALID_REQUEST',
+                            'message': 'Invalid pincode_id format'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
         except (IndexError, AttributeError):
             return Response({
                 'error': {
@@ -1027,6 +1097,8 @@ class SavePostView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate pincode format (6 digits)
+        if not isinstance(pincode, str):
+            pincode = str(pincode)
         if not pincode.isdigit() or len(pincode) != 6:
             return Response({
                 'error': {
@@ -1092,3 +1164,7 @@ class SavePostView(APIView):
                     'details': str(e) if settings.DEBUG else None
                 }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+def _format_address(city, state):
+    parts = [p.strip() for p in (city, state) if p and str(p).strip()]
+    return ", ".join(parts)
